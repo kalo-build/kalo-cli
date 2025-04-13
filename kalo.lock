@@ -1,0 +1,20 @@
+# kalo.lock - generated from kalo.yaml
+generatedAt: "2023-05-01T13:45:29Z"
+plugins:
+  "@kalo-build/plugin-morphe-psql-types":
+    version: "v1.0.0"
+    resolvedHash: "sha256:8f2e5e3f71f9a0b6062f6f24a32e90348f9fa2d05a02603c1cc9eaf46bf72f8a"
+    location: ".kalo/plugins/morphe-psql-types-v1.0.0.wasm"
+    downloadedAt: "2023-04-30T10:15:32Z"
+  
+  "@kalo-build/plugin-morphe-ts-types":
+    version: "v1.0.0"
+    resolvedHash: "sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
+    location: ".kalo/plugins/morphe-ts-types-v1.0.0.wasm"
+    downloadedAt: "2023-04-30T10:15:35Z"
+
+  "@kalo-build/plugin-morphe-go-structs":
+    version: "v1.0.0"
+    resolvedHash: "sha256:e5f6a7b8c9d0ea5b6c7d8e9f0a11f2a3a1b2c3d4b4cf4b25d6e7f8a9b0c1d2e3c"
+    location: ".kalo/plugins/morphe-go-structs-v1.0.0.wasm"
+    downloadedAt: "2023-04-30T10:15:35Z"
