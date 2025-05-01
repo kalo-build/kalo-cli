@@ -69,9 +69,10 @@ func main() {
 	}
 
 	rootCmd := &cobra.Command{
-		Use:   "kalo",
-		Short: "Kalo CLI is a tool for managing Kalo projects",
-		Long:  `Kalo CLI helps you manage Kalo projects, run plugins, and more.`,
+		Use:     "kalo",
+		Short:   "Kalo CLI is a tool for managing Kalo projects",
+		Long:    `Kalo CLI helps you manage Kalo projects, run plugins, and more.`,
+		Version: "0.0.1",
 	}
 
 	rootCmd.AddCommand(compileCommand())
