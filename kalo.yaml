@@ -1,89 +1,66 @@
 # Kalo YAML Configuration
-# This file defines specifications for Morphe compilation
 
-specs:
-  # KA:MO1 is the base specification for Morphe
-  "KA:MO1":
-    formats:
-      # YAML1 format for Morphe input files
-      YAML1:
-        inputMounts:
-          MORPHE_MODELS_DIR_YAML: "${PWD}/morphe/yaml/models"
-          MORPHE_ENTITIES_DIR_YAML: "${PWD}/morphe/yaml/entities"
-          MORPHE_ENUMS_DIR_YAML: "${PWD}/morphe/yaml/enums"
-          MORPHE_STRUCTURES_DIR_YAML: "${PWD}/morphe/yaml/structures"
-        
-        outputSpecs:
-          # GO1 format for Morphe Go output
-          GO1:
-            MORPHE_MODELS_DIR_GO: "${PWD}/morphe/go/models"
-            MORPHE_ENTITIES_DIR_GO: "${PWD}/morphe/go/entities"
-            MORPHE_ENUMS_DIR_GO: "${PWD}/morphe/go/enums"
-            MORPHE_STRUCTURES_DIR_GO: "${PWD}/morphe/go/structures"
-          
-          # PSQL1 format for Morphe PostgreSQL output
-          PSQL1:
-            MORPHE_MODELS_DIR_PSQL: "${PWD}/morphe/psql/models"
-            MORPHE_ENTITIES_DIR_PSQL: "${PWD}/morphe/psql/entities"
-            MORPHE_ENUMS_DIR_PSQL: "${PWD}/morphe/psql/enums"
-          
-          # TS1 format for Morphe TypeScript output
-          TS1:
-            MORPHE_MODELS_DIR_TS: "${PWD}/morphe/ts/models"
-            MORPHE_ENTITIES_DIR_TS: "${PWD}/morphe/ts/entities"
-            MORPHE_ENUMS_DIR_TS: "${PWD}/morphe/ts/enums"
-            MORPHE_STRUCTURES_DIR_TS: "${PWD}/morphe/ts/structures"
-        
-        # WASM plugins that transform YAML1 to other formats
-        wasmPlugins:
-          # Go WASM plugin
-          - path: "./plugins/morphe-go-struct.wasm"
-            inputSpec: "KA:MO1:YAML1"
-            outputSpec: "KA:MO1:GO1"
-            env:
-              LOG_LEVEL: "debug"
-          
-          # PostgreSQL WASM plugin
-          - path: "./plugins/morphe-psql-types.wasm"
-            inputSpec: "KA:MO1:YAML1"
-            outputSpec: "KA:MO1:PSQL1"
-            env:
-              USE_BIGSERIAL: "true"
-              DEFAULT_SCHEMA: "public"
-          
-          # TypeScript WASM plugin
-          - path: "./plugins/morphe-ts-types.wasm"
-            inputSpec: "KA:MO1:YAML1"
-            outputSpec: "KA:MO1:TS1"
-            env:
-              TS_MODE: "strict"
-              GENERATE_INTERFACES: "true"
-      
-      # GO1 format definition for Morphe Go files
-      GO1:
-        inputMounts:
-          MORPHE_MODELS_DIR_GO: "${PWD}/morphe/go/models"
-          MORPHE_ENTITIES_DIR_GO: "${PWD}/morphe/go/entities"
-          MORPHE_ENUMS_DIR_GO: "${PWD}/morphe/go/enums"
-          MORPHE_STRUCTURES_DIR_GO: "${PWD}/morphe/go/structures"
-        
-        outputSpecs: {}
-      
-      # PSQL1 format definition for Morphe PostgreSQL files
-      PSQL1:
-        inputMounts:
-          MORPHE_MODELS_DIR_PSQL: "${PWD}/morphe/psql/models"
-          MORPHE_ENTITIES_DIR_PSQL: "${PWD}/morphe/psql/entities"
-          MORPHE_ENUMS_DIR_PSQL: "${PWD}/morphe/psql/enums"
-        
-        outputSpecs: {}
-      
-      # TS1 format definition for Morphe TypeScript files
-      TS1:
-        inputMounts:
-          MORPHE_MODELS_DIR_TS: "${PWD}/morphe/ts/models"
-          MORPHE_ENTITIES_DIR_TS: "${PWD}/morphe/ts/entities"
-          MORPHE_ENUMS_DIR_TS: "${PWD}/morphe/ts/enums"
-          MORPHE_STRUCTURES_DIR_TS: "${PWD}/morphe/ts/structures"
-        
-        outputSpecs: {} 
+stores:
+  KA_MO_YAML:
+    format: "KA:MO1:YAML1"
+    type: "localFileSystem"
+    path: "$KA_MO_YAML_PATH"
+  KA_MO_PSQL:
+    format: "KA:MO1:PSQL1"
+    type: "localFileSystem"
+    path: "$KA_MO_PSQL_PATH"
+  KA_MO_TS:
+    format: "KA:MO1:TS1"
+    type: "localFileSystem"
+    path: "$KA_MO_TS_PATH"
+  KA_MO_GO:
+    format: "KA:MO1:GO1"
+    type: "localFileSystem"
+    path: "$KA_MO_GO_PATH"
+
+config:
+  "@kalo-build/plugin-morphe-psql-types":
+    structures:
+      "Schema": "public"
+      "UseBigSerial": false
+      "EnablePersistence": true
+
+pipelines:
+  compile:
+    - stage: "psql-types"
+      steps:
+        - "plugin: @kalo-build/plugin-morphe-psql-types"
+    - stage: "go-struct"
+      steps:
+        - "plugin: @kalo-build/plugin-morphe-go-struct"
+    - stage: "ts-types"
+      steps:
+        - "plugin: @kalo-build/plugin-morphe-ts-types"
+
+plugins:
+  "@kalo-build/plugin-morphe-psql-types":
+    version: "v1.0.0"
+    input:
+      format: "KA:MO1:YAML1"
+      store: "KA_MO_YAML"
+    output:
+      format: "KA:MO1:PSQL1"
+      store: "KA_MO_PSQL"
+  
+  "@kalo-build/plugin-morphe-ts-types":
+    version: "v1.0.0"
+    input:
+      format: "KA:MO1:YAML1"
+      store: "KA_MO_YAML"
+    output:
+      format: "KA:MO1:TS1"
+      store: "KA_MO_TS"
+  
+  "@kalo-build/plugin-morphe-go-struct":
+    version: "v1.0.0"
+    input:
+      format: "KA:MO1:YAML1"
+      store: "KA_MO_YAML"
+    output:
+      format: "KA:MO1:GO1"
+      store: "KA_MO_GO"
