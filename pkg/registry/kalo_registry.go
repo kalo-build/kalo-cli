@@ -15,49 +15,49 @@ type PluginIdentifier string
 type PluginVersion string
 
 // PluginMetadata contains information about a specific plugin
-type PluginMetadata struct {
-	// Plugin identifier in the format @org/name
-	ID PluginIdentifier `json:"id"`
+// type PluginMetadata struct {
+// 	// Plugin identifier in the format @org/name
+// 	ID PluginIdentifier `json:"id"`
 
-	// Version of the plugin
-	Version PluginVersion `json:"version"`
+// 	// Version of the plugin
+// 	Version PluginVersion `json:"version"`
 
-	// Description of what the plugin does
-	Description string `json:"description,omitempty"`
+// 	// Description of what the plugin does
+// 	Description string `json:"description,omitempty"`
 
-	// Author of the plugin
-	Author string `json:"author,omitempty"`
+// 	// Author of the plugin
+// 	Author string `json:"author,omitempty"`
 
-	// License of the plugin
-	License string `json:"license,omitempty"`
+// 	// License of the plugin
+// 	License string `json:"license,omitempty"`
 
-	// Homepage URL for the plugin
-	Homepage string `json:"homepage,omitempty"`
+// 	// Homepage URL for the plugin
+// 	Homepage string `json:"homepage,omitempty"`
 
-	// Repository URL for the plugin source code
-	Repository string `json:"repository,omitempty"`
+// 	// Repository URL for the plugin source code
+// 	Repository string `json:"repository,omitempty"`
 
-	// Tags associated with the plugin
-	Tags []string `json:"tags,omitempty"`
+// 	// Tags associated with the plugin
+// 	Tags []string `json:"tags,omitempty"`
 
-	// InputSpec that this plugin consumes
-	InputSpec string `json:"inputSpec"`
+// 	// InputSpec that this plugin consumes
+// 	InputSpec string `json:"inputSpec"`
 
-	// OutputSpec that this plugin produces
-	OutputSpec string `json:"outputSpec"`
+// 	// OutputSpec that this plugin produces
+// 	OutputSpec string `json:"outputSpec"`
 
-	// Dependencies on other plugins or modules
-	Dependencies map[PluginIdentifier]PluginVersion `json:"dependencies,omitempty"`
+// 	// Dependencies on other plugins or modules
+// 	Dependencies map[PluginIdentifier]PluginVersion `json:"dependencies,omitempty"`
 
-	// Size of the plugin WASM binary in bytes
-	Size int64 `json:"size"`
+// 	// Size of the plugin WASM binary in bytes
+// 	Size int64 `json:"size"`
 
-	// SHA256 hash of the plugin binary
-	SHA256 string `json:"sha256"`
+// 	// SHA256 hash of the plugin binary
+// 	SHA256 string `json:"sha256"`
 
-	// PublishedAt timestamp when the plugin was published
-	PublishedAt time.Time `json:"publishedAt"`
-}
+// 	// PublishedAt timestamp when the plugin was published
+// 	PublishedAt time.Time `json:"publishedAt"`
+// }
 
 // PluginLockInfo represents a plugin entry in the lockfile
 type PluginLockInfo struct {
@@ -83,26 +83,26 @@ type LockFile struct {
 	Plugins map[PluginIdentifier]PluginLockInfo `yaml:"plugins"`
 }
 
-// Registry defines the interface for interacting with the Kalo plugin registry
-type Registry interface {
-	// GetPluginMetadata retrieves metadata for a plugin
-	GetPluginMetadata(id PluginIdentifier, version PluginVersion) (*PluginMetadata, error)
+// // Registry defines the interface for interacting with the Kalo plugin registry
+// type Registry interface {
+// 	// GetPluginMetadata retrieves metadata for a plugin
+// 	GetPluginMetadata(id PluginIdentifier, version PluginVersion) (*PluginMetadata, error)
 
-	// SearchPlugins searches for plugins matching criteria
-	SearchPlugins(query string, tags []string) ([]PluginMetadata, error)
+// 	// SearchPlugins searches for plugins matching criteria
+// 	SearchPlugins(query string, tags []string) ([]PluginMetadata, error)
 
-	// DownloadPlugin downloads a plugin to the local cache
-	DownloadPlugin(id PluginIdentifier, version PluginVersion) (string, error)
+// 	// DownloadPlugin downloads a plugin to the local cache
+// 	DownloadPlugin(id PluginIdentifier, version PluginVersion) (string, error)
 
-	// ResolveVersion resolves a version constraint to a specific version
-	ResolveVersion(id PluginIdentifier, versionConstraint string) (PluginVersion, error)
+// 	// ResolveVersion resolves a version constraint to a specific version
+// 	ResolveVersion(id PluginIdentifier, versionConstraint string) (PluginVersion, error)
 
-	// ValidatePluginHash validates the SHA256 hash of a plugin
-	ValidatePluginHash(id PluginIdentifier, version PluginVersion, filePath string) (bool, error)
+// 	// ValidatePluginHash validates the SHA256 hash of a plugin
+// 	ValidatePluginHash(id PluginIdentifier, version PluginVersion, filePath string) (bool, error)
 
-	// GenerateLockFile generates a lockfile from the current state
-	GenerateLockFile(configPath string, pluginVersions map[PluginIdentifier]PluginVersion) (*LockFile, error)
-}
+// 	// GenerateLockFile generates a lockfile from the current state
+// 	GenerateLockFile(configPath string, pluginVersions map[PluginIdentifier]PluginVersion) (*LockFile, error)
+// }
 
 // CalculateSHA256 calculates the SHA256 hash of a file
 func CalculateSHA256(filePath string) (string, error) {

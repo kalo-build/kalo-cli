@@ -75,59 +75,59 @@ func NewRegistryClient(options *RegistryClientOptions) *RegistryClient {
 }
 
 // GetPluginMetadata retrieves metadata for a plugin
-func (c *RegistryClient) GetPluginMetadata(id PluginIdentifier, version PluginVersion) (*PluginMetadata, error) {
-	if c.options.OfflineMode {
-		return nil, fmt.Errorf("cannot fetch plugin metadata in offline mode")
-	}
+// func (c *RegistryClient) GetPluginMetadata(id PluginIdentifier, version PluginVersion) (*PluginMetadata, error) {
+// 	if c.options.OfflineMode {
+// 		return nil, fmt.Errorf("cannot fetch plugin metadata in offline mode")
+// 	}
 
-	url := fmt.Sprintf("%s/v1/plugins/%s/versions/%s", c.options.RegistryURL, id, version)
-	resp, err := c.httpClient.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch plugin metadata: %w", err)
-	}
-	defer resp.Body.Close()
+// 	url := fmt.Sprintf("%s/v1/plugins/%s/versions/%s", c.options.RegistryURL, id, version)
+// 	resp, err := c.httpClient.Get(url)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to fetch plugin metadata: %w", err)
+// 	}
+// 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read plugin metadata: %w", err)
-	}
+// 	body, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to read plugin metadata: %w", err)
+// 	}
 
-	var metadata PluginMetadata
-	err = yaml.Unmarshal(body, &metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal plugin metadata: %w", err)
-	}
+// 	var metadata PluginMetadata
+// 	err = yaml.Unmarshal(body, &metadata)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to unmarshal plugin metadata: %w", err)
+// 	}
 
-	return &metadata, nil
-}
+// 	return &metadata, nil
+// }
 
-// SearchPlugins searches for plugins matching criteria
-func (c *RegistryClient) SearchPlugins(query string, tags []string) ([]PluginMetadata, error) {
-	if c.options.OfflineMode {
-		return nil, fmt.Errorf("cannot search plugins in offline mode")
-	}
+// // SearchPlugins searches for plugins matching criteria
+// func (c *RegistryClient) SearchPlugins(query string, tags []string) ([]PluginMetadata, error) {
+// 	if c.options.OfflineMode {
+// 		return nil, fmt.Errorf("cannot search plugins in offline mode")
+// 	}
 
-	// Make an HTTP request to the registry API
-	url := fmt.Sprintf("%s/v1/plugins?query=%s&tags=%s", c.options.RegistryURL, query, strings.Join(tags, ","))
-	resp, err := c.httpClient.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search plugins: %w", err)
-	}
-	defer resp.Body.Close()
+// 	// Make an HTTP request to the registry API
+// 	url := fmt.Sprintf("%s/v1/plugins?query=%s&tags=%s", c.options.RegistryURL, query, strings.Join(tags, ","))
+// 	resp, err := c.httpClient.Get(url)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to search plugins: %w", err)
+// 	}
+// 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read plugin metadata: %w", err)
-	}
+// 	body, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to read plugin metadata: %w", err)
+// 	}
 
-	var metadata []PluginMetadata
-	err = yaml.Unmarshal(body, &metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal plugin metadata: %w", err)
-	}
+// 	var metadata []PluginMetadata
+// 	err = yaml.Unmarshal(body, &metadata)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to unmarshal plugin metadata: %w", err)
+// 	}
 
-	return metadata, nil
-}
+// 	return metadata, nil
+// }
 
 // DownloadPlugin downloads a plugin to the local cache
 func (c *RegistryClient) DownloadPlugin(id PluginIdentifier, version PluginVersion) (string, error) {
@@ -171,31 +171,31 @@ func (c *RegistryClient) DownloadPlugin(id PluginIdentifier, version PluginVersi
 }
 
 // ResolveVersion resolves a version constraint to a specific version
-func (c *RegistryClient) ResolveVersion(id PluginIdentifier, versionConstraint string) (PluginVersion, error) {
-	if c.options.OfflineMode {
-		return "", fmt.Errorf("cannot resolve version in offline mode")
-	}
+// func (c *RegistryClient) ResolveVersion(id PluginIdentifier, versionConstraint string) (PluginVersion, error) {
+// 	if c.options.OfflineMode {
+// 		return "", fmt.Errorf("cannot resolve version in offline mode")
+// 	}
 
-	// Fetch available versions from the registry and find the best match for the version constraint
-	versions, err := c.SearchPlugins(string(id), []string{})
-	if err != nil {
-		return "", fmt.Errorf("failed to search plugins: %w", err)
-	}
+// 	// Fetch available versions from the registry and find the best match for the version constraint
+// 	versions, err := c.SearchPlugins(string(id), []string{})
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to search plugins: %w", err)
+// 	}
 
-	// Find the best match for the constraint
-	var bestMatch PluginVersion
-	for _, version := range versions {
-		if c.versionSatisfiesConstraint(version.Version, versionConstraint) && c.versionIsNewer(version.Version, bestMatch) {
-			bestMatch = version.Version
-		}
-	}
+// 	// Find the best match for the constraint
+// 	var bestMatch PluginVersion
+// 	for _, version := range versions {
+// 		if c.versionSatisfiesConstraint(version.Version, versionConstraint) && c.versionIsNewer(version.Version, bestMatch) {
+// 			bestMatch = version.Version
+// 		}
+// 	}
 
-	if bestMatch == "" {
-		return "", fmt.Errorf("no version satisfies the constraint: %s", versionConstraint)
-	}
+// 	if bestMatch == "" {
+// 		return "", fmt.Errorf("no version satisfies the constraint: %s", versionConstraint)
+// 	}
 
-	return bestMatch, nil
-}
+// 	return bestMatch, nil
+// }
 
 // versionSatisfiesConstraint checks if a version satisfies a version constraint
 func (c *RegistryClient) versionSatisfiesConstraint(version PluginVersion, constraint string) bool {
@@ -247,22 +247,22 @@ func (c *RegistryClient) versionIsNewer(version1 PluginVersion, version2 PluginV
 }
 
 // ValidatePluginHash validates the SHA256 hash of a plugin
-func (c *RegistryClient) ValidatePluginHash(id PluginIdentifier, version PluginVersion, filePath string) (bool, error) {
-	// Get the expected hash from the registry
-	metadata, err := c.GetPluginMetadata(id, version)
-	if err != nil {
-		return false, fmt.Errorf("failed to get plugin metadata: %w", err)
-	}
+// func (c *RegistryClient) ValidatePluginHash(id PluginIdentifier, version PluginVersion, filePath string) (bool, error) {
+// 	// Get the expected hash from the registry
+// 	metadata, err := c.GetPluginMetadata(id, version)
+// 	if err != nil {
+// 		return false, fmt.Errorf("failed to get plugin metadata: %w", err)
+// 	}
 
-	// Calculate the hash of the downloaded file
-	actualHash, err := CalculateSHA256(filePath)
-	if err != nil {
-		return false, fmt.Errorf("failed to calculate file hash: %w", err)
-	}
+// 	// Calculate the hash of the downloaded file
+// 	actualHash, err := CalculateSHA256(filePath)
+// 	if err != nil {
+// 		return false, fmt.Errorf("failed to calculate file hash: %w", err)
+// 	}
 
-	// Compare the hashes
-	return metadata.SHA256 == actualHash, nil
-}
+// 	// Compare the hashes
+// 	return metadata.SHA256 == actualHash, nil
+// }
 
 // GenerateLockFile generates a lockfile from the current state
 func (c *RegistryClient) GenerateLockFile(configPath string, pluginVersions map[PluginIdentifier]PluginVersion) (*LockFile, error) {

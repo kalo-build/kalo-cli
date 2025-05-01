@@ -1,0 +1,1 @@
+go build -o ../dist/kalo.exe ../cmd/kalo/main.go
