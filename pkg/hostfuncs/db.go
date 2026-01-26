@@ -63,7 +63,7 @@ func (h *DBHostFunctions) Register(ctx context.Context, r wazero.Runtime) error 
 		NewFunctionBuilder().
 		WithFunc(h.dbGetMigrations).
 		WithParameterNames("store_id").
-		WithResultNames("result_ptr", "result_len").
+		WithResultNames("packed_ptr_len").
 		Export("db_get_migrations").
 		NewFunctionBuilder().
 		WithFunc(h.dbApplyMigration).
@@ -81,10 +81,11 @@ func (h *DBHostFunctions) Register(ctx context.Context, r wazero.Runtime) error 
 }
 
 // dbGetMigrations is the host function that returns applied migrations as JSON.
-func (h *DBHostFunctions) dbGetMigrations(ctx context.Context, m api.Module, storeID uint32) (uint32, uint32) {
+// Returns a packed uint64: high 32 bits = pointer, low 32 bits = length.
+func (h *DBHostFunctions) dbGetMigrations(ctx context.Context, m api.Module, storeID uint32) uint64 {
 	pool, ok := h.connections[storeID]
 	if !ok {
-		return 0, 0
+		return 0
 	}
 
 	rows, err := pool.Query(ctx, `
@@ -183,15 +184,16 @@ func (h *DBHostFunctions) dbEnsureTrackingTable(ctx context.Context, m api.Modul
 // writeJSONToMemory marshals data to JSON and writes it to WASM memory.
 // It calls the WASM module's exported kalo_alloc function to allocate memory.
 // If kalo_alloc is not exported, falls back to a fixed buffer region.
-func writeJSONToMemory(ctx context.Context, m api.Module, data interface{}) (uint32, uint32) {
+// Returns a packed uint64: high 32 bits = pointer, low 32 bits = length.
+func writeJSONToMemory(ctx context.Context, m api.Module, data interface{}) uint64 {
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		return 0, 0
+		return 0
 	}
 
 	mem := m.Memory()
 	if mem == nil {
-		return 0, 0
+		return 0
 	}
 
 	size := uint32(len(jsonBytes))
@@ -216,16 +218,22 @@ func writeJSONToMemory(ctx context.Context, m api.Module, data interface{}) (uin
 		if endAddr > currentSize {
 			pagesToGrow := (endAddr - currentSize + 65535) / 65536
 			if _, ok := mem.Grow(pagesToGrow); !ok {
-				return 0, 0
+				return 0
 			}
 		}
 	}
 
 	if !mem.Write(ptr, jsonBytes) {
-		return 0, 0
+		return 0
 	}
 
-	return ptr, size
+	return packPtrLen(ptr, size)
+}
+
+// packPtrLen packs a pointer and length into a single uint64.
+// High 32 bits = pointer, low 32 bits = length.
+func packPtrLen(ptr, length uint32) uint64 {
+	return (uint64(ptr) << 32) | uint64(length)
 }
 
 // readStringFromMemory reads a string from WASM memory.
