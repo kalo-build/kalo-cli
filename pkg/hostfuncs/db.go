@@ -1,276 +1,99 @@
-// Package hostfuncs provides host function implementations for WASM plugins.
 package hostfuncs
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
-	"fmt"
-	"time"
+	"log"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
 
-// Host function error codes
-const (
-	ErrCodeSuccess            = 0
-	ErrCodeStoreNotFound      = 1
-	ErrCodeReadNameFailed     = 2
-	ErrCodeReadSQLFailed      = 3
-	ErrCodeBeginTxFailed      = 4
-	ErrCodeMigrationSQLFailed = 5
-	ErrCodeRecordFailed       = 6
-	ErrCodeCommitFailed       = 7
-	ErrCodeCreateTableFailed  = 2
-)
-
-// AppliedMigration represents a migration that has been applied to the database.
-type AppliedMigration struct {
-	Name      string `json:"name"`
-	Checksum  string `json:"checksum"`
-	AppliedAt int64  `json:"appliedAt"`
-}
-
-// DBHostFunctions manages database connections and provides host functions for WASM plugins.
-type DBHostFunctions struct {
-	connections map[uint32]*pgxpool.Pool
-}
-
-// NewDBHostFunctions creates a new DBHostFunctions instance.
-func NewDBHostFunctions() *DBHostFunctions {
-	return &DBHostFunctions{
-		connections: make(map[uint32]*pgxpool.Pool),
-	}
-}
-
-// AddConnection adds a database connection for a store ID.
-func (h *DBHostFunctions) AddConnection(storeID uint32, pool *pgxpool.Pool) {
-	h.connections[storeID] = pool
-}
-
-// Close closes all database connections.
-func (h *DBHostFunctions) Close() {
-	for _, pool := range h.connections {
-		pool.Close()
-	}
-}
-
-// Register registers the database host functions with the wazero runtime.
-func (h *DBHostFunctions) Register(ctx context.Context, r wazero.Runtime) error {
-	_, err := r.NewHostModuleBuilder("kalo").
-		NewFunctionBuilder().
-		WithFunc(h.dbGetMigrations).
-		WithParameterNames("store_id").
-		WithResultNames("packed_ptr_len").
-		Export("db_get_migrations").
-		NewFunctionBuilder().
-		WithFunc(h.dbApplyMigration).
-		WithParameterNames("store_id", "name_ptr", "name_len", "sql_ptr", "sql_len").
-		WithResultNames("error_code").
-		Export("db_apply_migration").
-		NewFunctionBuilder().
-		WithFunc(h.dbEnsureTrackingTable).
-		WithParameterNames("store_id").
-		WithResultNames("error_code").
-		Export("db_ensure_tracking_table").
-		Instantiate(ctx)
-
-	return err
-}
-
-// dbGetMigrations is the host function that returns applied migrations as JSON.
-// Returns a packed uint64: high 32 bits = pointer, low 32 bits = length.
-func (h *DBHostFunctions) dbGetMigrations(ctx context.Context, m api.Module, storeID uint32) uint64 {
+// dbExec is the host function that executes SQL that doesn't return rows.
+// Returns 0 on success, non-zero error code on failure.
+func (h *KaloHost) dbExec(ctx context.Context, m api.Module, storeID, sqlPtr, sqlLen uint32) uint32 {
 	pool, ok := h.connections[storeID]
 	if !ok {
-		return 0
-	}
-
-	rows, err := pool.Query(ctx, `
-		SELECT name, checksum, EXTRACT(EPOCH FROM applied_at)::bigint as applied_at
-		FROM kalo_migrations
-		ORDER BY name ASC
-	`)
-	if err != nil {
-		// Table might not exist yet, return empty array
-		return writeJSONToMemory(ctx, m, []AppliedMigration{})
-	}
-	defer rows.Close()
-
-	var migrations []AppliedMigration
-	for rows.Next() {
-		var mig AppliedMigration
-		if err := rows.Scan(&mig.Name, &mig.Checksum, &mig.AppliedAt); err != nil {
-			continue
-		}
-		migrations = append(migrations, mig)
-	}
-
-	if migrations == nil {
-		migrations = []AppliedMigration{}
-	}
-
-	return writeJSONToMemory(ctx, m, migrations)
-}
-
-// dbApplyMigration is the host function that applies a migration.
-func (h *DBHostFunctions) dbApplyMigration(ctx context.Context, m api.Module, storeID, namePtr, nameLen, sqlPtr, sqlLen uint32) uint32 {
-	pool, ok := h.connections[storeID]
-	if !ok {
+		log.Printf("[hostfuncs] ERROR: store ID %d not found", storeID)
 		return ErrCodeStoreNotFound
-	}
-
-	name, ok := readStringFromMemory(m, namePtr, nameLen)
-	if !ok {
-		return ErrCodeReadNameFailed
 	}
 
 	sql, ok := readBytesFromMemory(m, sqlPtr, sqlLen)
 	if !ok {
+		log.Printf("[hostfuncs] ERROR: failed to read SQL from memory")
 		return ErrCodeReadSQLFailed
 	}
 
-	checksum := ComputeChecksum(sql)
+	log.Printf("[hostfuncs] Executing SQL (%d bytes)", len(sql))
 
-	tx, err := pool.Begin(ctx)
+	_, err := pool.Exec(ctx, string(sql))
 	if err != nil {
-		return ErrCodeBeginTxFailed
-	}
-	defer tx.Rollback(ctx)
-
-	if _, err = tx.Exec(ctx, string(sql)); err != nil {
-		return ErrCodeMigrationSQLFailed
+		log.Printf("[hostfuncs] ERROR: SQL execution failed: %v", err)
+		return ErrCodeExecFailed
 	}
 
-	_, err = tx.Exec(ctx, `
-		INSERT INTO kalo_migrations (name, checksum, applied_at)
-		VALUES ($1, $2, $3)
-	`, name, checksum, time.Now())
-	if err != nil {
-		return ErrCodeRecordFailed
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return ErrCodeCommitFailed
-	}
-
+	log.Printf("[hostfuncs] SQL executed successfully")
 	return ErrCodeSuccess
 }
 
-// dbEnsureTrackingTable is the host function that creates the migration tracking table.
-func (h *DBHostFunctions) dbEnsureTrackingTable(ctx context.Context, m api.Module, storeID uint32) uint32 {
+// dbQuery is the host function that executes SQL that returns rows.
+// Returns a packed uint64: high 32 bits = pointer, low 32 bits = (length << 8 | errCode)
+func (h *KaloHost) dbQuery(ctx context.Context, m api.Module, storeID, sqlPtr, sqlLen uint32) uint64 {
 	pool, ok := h.connections[storeID]
 	if !ok {
-		return ErrCodeStoreNotFound
+		log.Printf("[hostfuncs] ERROR: store ID %d not found", storeID)
+		return packQueryResult(0, 0, ErrCodeStoreNotFound)
 	}
 
-	_, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS kalo_migrations (
-			id SERIAL PRIMARY KEY,
-			name TEXT NOT NULL UNIQUE,
-			checksum TEXT NOT NULL,
-			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-		)
-	`)
+	sql, ok := readBytesFromMemory(m, sqlPtr, sqlLen)
+	if !ok {
+		log.Printf("[hostfuncs] ERROR: failed to read SQL from memory")
+		return packQueryResult(0, 0, ErrCodeReadSQLFailed)
+	}
+
+	log.Printf("[hostfuncs] Querying SQL (%d bytes)", len(sql))
+
+	rows, err := pool.Query(ctx, string(sql))
 	if err != nil {
-		return ErrCodeCreateTableFailed
+		log.Printf("[hostfuncs] ERROR: SQL query failed: %v", err)
+		return packQueryResult(0, 0, ErrCodeQueryFailed)
 	}
+	defer rows.Close()
 
-	return ErrCodeSuccess
-}
+	// Convert rows to JSON array of objects
+	var results []map[string]interface{}
+	fieldDescriptions := rows.FieldDescriptions()
 
-// writeJSONToMemory marshals data to JSON and writes it to WASM memory.
-// It calls the WASM module's exported kalo_alloc function to allocate memory.
-// If kalo_alloc is not exported, falls back to a fixed buffer region.
-// Returns a packed uint64: high 32 bits = pointer, low 32 bits = length.
-func writeJSONToMemory(ctx context.Context, m api.Module, data interface{}) uint64 {
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return 0
-	}
-
-	mem := m.Memory()
-	if mem == nil {
-		return 0
-	}
-
-	size := uint32(len(jsonBytes))
-
-	// Try to use the SDK's exported allocator
-	var ptr uint32
-	if allocFn := m.ExportedFunction("kalo_alloc"); allocFn != nil {
-		results, err := allocFn.Call(ctx, uint64(size))
-		if err == nil && len(results) > 0 && results[0] != 0 {
-			ptr = uint32(results[0])
+	for rows.Next() {
+		values, err := rows.Values()
+		if err != nil {
+			continue
 		}
-	}
 
-	// Fallback: use fixed buffer region if allocator not available
-	if ptr == 0 {
-		const bufferOffset = uint32(0x100000) // 1MB
-		ptr = bufferOffset
-		endAddr := ptr + size
-
-		// Ensure memory is large enough
-		currentSize := mem.Size()
-		if endAddr > currentSize {
-			pagesToGrow := (endAddr - currentSize + 65535) / 65536
-			if _, ok := mem.Grow(pagesToGrow); !ok {
-				return 0
+		row := make(map[string]interface{})
+		for i, fd := range fieldDescriptions {
+			if i < len(values) {
+				row[string(fd.Name)] = values[i]
 			}
 		}
+		results = append(results, row)
 	}
 
-	if !mem.Write(ptr, jsonBytes) {
-		return 0
+	if results == nil {
+		results = []map[string]interface{}{}
 	}
 
-	return packPtrLen(ptr, size)
+	// Write result to WASM memory
+	ptr, length := writeJSONToMemory(ctx, m, results)
+	if ptr == 0 {
+		return packQueryResult(0, 0, ErrCodeQueryFailed)
+	}
+
+	log.Printf("[hostfuncs] Query returned %d rows", len(results))
+	return packQueryResult(ptr, length, ErrCodeSuccess)
 }
 
-// packPtrLen packs a pointer and length into a single uint64.
-// High 32 bits = pointer, low 32 bits = length.
-func packPtrLen(ptr, length uint32) uint64 {
-	return (uint64(ptr) << 32) | uint64(length)
-}
-
-// readStringFromMemory reads a string from WASM memory.
-func readStringFromMemory(m api.Module, ptr, length uint32) (string, bool) {
-	if length == 0 {
-		return "", true
-	}
-
-	mem := m.Memory()
-	if mem == nil {
-		return "", false
-	}
-
-	bytes, ok := mem.Read(ptr, length)
-	if !ok {
-		return "", false
-	}
-
-	return string(bytes), true
-}
-
-// readBytesFromMemory reads bytes from WASM memory.
-func readBytesFromMemory(m api.Module, ptr, length uint32) ([]byte, bool) {
-	if length == 0 {
-		return []byte{}, true
-	}
-
-	mem := m.Memory()
-	if mem == nil {
-		return nil, false
-	}
-
-	return mem.Read(ptr, length)
-}
-
-// ComputeChecksum computes a SHA256 checksum of the given data.
-func ComputeChecksum(data []byte) string {
-	hash := sha256.Sum256(data)
-	return fmt.Sprintf("%x", hash)
+// packQueryResult packs query result into a uint64.
+// Format: high 32 bits = ptr, low 32 bits = (length << 8 | errCode)
+func packQueryResult(ptr, length, errCode uint32) uint64 {
+	lenAndErr := (length << 8) | (errCode & 0xFF)
+	return (uint64(ptr) << 32) | uint64(lenAndErr)
 }

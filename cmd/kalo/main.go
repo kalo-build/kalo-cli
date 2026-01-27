@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/kalo-build/kalo-cli/pkg/hostfuncs"
@@ -66,23 +72,42 @@ func (s Store) Connection() string {
 	return s.GetStringOption("connection", "")
 }
 
+// GitRepoRoot returns the repoRoot option for gitRepository stores.
+func (s Store) GitRepoRoot() string {
+	return s.GetStringOption("repoRoot", ".")
+}
+
+// GitRef returns the ref option for gitRepository stores.
+func (s Store) GitRef() string {
+	return s.GetStringOption("ref", "HEAD")
+}
+
+// GitSubPath returns the subPath option for gitRepository stores.
+func (s Store) GitSubPath() string {
+	return s.GetStringOption("subPath", "")
+}
+
 // Pipeline represents a pipeline configuration
 type Pipeline struct {
-	Stages []Stage `yaml:"stages"`
+	Description string  `yaml:"description,omitempty"` // Short description shown in 'kalo list'
+	Alias       string  `yaml:"alias,omitempty"`       // Optional short alias for the pipeline (e.g., "up" for "migrate-up")
+	Stages      []Stage `yaml:"stages"`
 }
 
 // Stage represents a stage in a pipeline
 type Stage struct {
-	Name  string   `yaml:"name"`
-	Steps []string `yaml:"steps"`
+	Name   string                 `yaml:"name"`
+	Steps  []string               `yaml:"steps"`
+	Config map[string]interface{} `yaml:"config,omitempty"` // Per-stage config, merged with global plugin config
 }
 
 // PluginDefinition represents a plugin configuration
 type PluginDefinition struct {
-	Version string         `yaml:"version"`
-	Input   PluginIOSpec   `yaml:"input"`
-	Output  PluginIOSpec   `yaml:"output,omitempty"`
-	Config  map[string]any `yaml:"config,omitempty"`
+	Version string                  `yaml:"version"`
+	Input   PluginIOSpec            `yaml:"input"`
+	Inputs  map[string]PluginIOSpec `yaml:"inputs,omitempty"` // Multiple named inputs
+	Output  PluginIOSpec            `yaml:"output,omitempty"`
+	Config  map[string]any          `yaml:"config,omitempty"`
 }
 
 // PluginIOSpec represents a plugin's input or output specification
@@ -115,6 +140,7 @@ func main() {
 	rootCmd.AddCommand(compileCommand())
 	rootCmd.AddCommand(runCommand())
 	rootCmd.AddCommand(pluginCommand())
+	rootCmd.AddCommand(listCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -160,6 +186,74 @@ Examples:
 	return cmd
 }
 
+func listCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List available pipelines and plugins",
+		Long:  `List all pipelines defined in kalo.yaml, showing names and aliases.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := listPipelines(); err != nil {
+				log.Fatalf("List failed: %v", err)
+			}
+		},
+	}
+
+	return cmd
+}
+
+// listPipelines reads kalo.yaml and displays all available pipelines
+func listPipelines() error {
+	// Read kalo.yaml
+	configData, err := os.ReadFile("kalo.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to read kalo.yaml: %w", err)
+	}
+
+	var config KaloConfig
+	if err := yaml.Unmarshal(configData, &config); err != nil {
+		return fmt.Errorf("failed to parse kalo.yaml: %w", err)
+	}
+
+	fmt.Println("Available pipelines:")
+	fmt.Println()
+
+	// Collect and sort pipeline names for consistent output
+	names := make([]string, 0, len(config.Pipelines))
+	for name := range config.Pipelines {
+		names = append(names, name)
+	}
+	// Sort alphabetically
+	for i := 0; i < len(names)-1; i++ {
+		for j := i + 1; j < len(names); j++ {
+			if names[i] > names[j] {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
+	}
+
+	for _, name := range names {
+		pipeline := config.Pipelines[name]
+
+		// Build the name/alias part
+		nameStr := name
+		if pipeline.Alias != "" {
+			nameStr = fmt.Sprintf("%s (%s)", name, pipeline.Alias)
+		}
+
+		// Print with description if available
+		if pipeline.Description != "" {
+			fmt.Printf("  %-30s %s\n", nameStr, pipeline.Description)
+		} else {
+			fmt.Printf("  %s\n", nameStr)
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Run with: kalo run <pipeline-name-or-alias>")
+
+	return nil
+}
+
 // runTarget runs a pipeline or individual plugin by name.
 func runTarget(target string) error {
 	config, err := readKaloConfig()
@@ -194,15 +288,23 @@ func runTarget(target string) error {
 
 	wasi_snapshot_preview1.MustInstantiate(ctx, wasmRuntime)
 
+	// Create shared host functions and register once
+	kaloHost := hostfuncs.NewKaloHost()
+	defer kaloHost.Close()
+
+	if err := kaloHost.Register(ctx, wasmRuntime); err != nil {
+		return fmt.Errorf("failed to register host functions: %w", err)
+	}
+
 	// Check if target is a plugin (starts with @) or a pipeline
 	if strings.HasPrefix(target, "@") {
-		return runSinglePlugin(ctx, wasmRuntime, target, config, lockFile)
+		return runSinglePlugin(ctx, wasmRuntime, kaloHost, target, config, lockFile)
 	}
-	return runPipeline(ctx, wasmRuntime, target, config, lockFile)
+	return runPipeline(ctx, wasmRuntime, kaloHost, target, config, lockFile)
 }
 
 // runSinglePlugin runs a single plugin by name.
-func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, pluginName string, config *KaloConfig, lockFile *registry.LockFile) error {
+func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pluginName string, config *KaloConfig, lockFile *registry.LockFile) error {
 	log.Printf("Running plugin: %s", pluginName)
 
 	pluginDef, exists := config.Plugins[pluginName]
@@ -228,17 +330,40 @@ func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, pluginName
 		}
 	}
 
-	return executePlugin(ctx, wasmRuntime, pluginLock.Location, config.Stores, pluginDef)
+	return executePlugin(ctx, wasmRuntime, kaloHost, pluginLock.Location, config.Stores, pluginDef)
+}
+
+// resolvePipeline looks up a pipeline by name or alias.
+// Returns (resolvedName, pipeline, found).
+func resolvePipeline(nameOrAlias string, pipelines map[string]Pipeline) (string, Pipeline, bool) {
+	// First, try direct name lookup
+	if pipeline, exists := pipelines[nameOrAlias]; exists {
+		return nameOrAlias, pipeline, true
+	}
+
+	// Then, try to find by alias
+	for name, pipeline := range pipelines {
+		if pipeline.Alias == nameOrAlias {
+			return name, pipeline, true
+		}
+	}
+
+	return "", Pipeline{}, false
 }
 
 // runPipeline runs all steps in a pipeline.
-func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, pipelineName string, config *KaloConfig, lockFile *registry.LockFile) error {
-	pipeline, exists := config.Pipelines[pipelineName]
+func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pipelineName string, config *KaloConfig, lockFile *registry.LockFile) error {
+	// Resolve pipeline name (check direct name first, then aliases)
+	resolvedName, pipeline, exists := resolvePipeline(pipelineName, config.Pipelines)
 	if !exists {
-		return fmt.Errorf("pipeline '%s' not found in kalo.yaml", pipelineName)
+		return fmt.Errorf("pipeline '%s' not found in kalo.yaml (checked name and aliases)", pipelineName)
 	}
 
-	log.Printf("Running pipeline: %s", pipelineName)
+	if resolvedName != pipelineName {
+		log.Printf("Running pipeline: %s (alias for %s)", pipelineName, resolvedName)
+	} else {
+		log.Printf("Running pipeline: %s", pipelineName)
+	}
 
 	for _, stage := range pipeline.Stages {
 		log.Printf("Running stage: %s", stage.Name)
@@ -249,13 +374,60 @@ func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, pipelineName s
 			}
 			pluginName := strings.TrimPrefix(step, "plugin: ")
 
-			if err := runSinglePlugin(ctx, wasmRuntime, pluginName, config, lockFile); err != nil {
+			if err := runPluginWithStageConfig(ctx, wasmRuntime, kaloHost, pluginName, stage.Config, config, lockFile); err != nil {
 				return fmt.Errorf("plugin %s failed: %w", pluginName, err)
 			}
 		}
 	}
 
 	return nil
+}
+
+// runPluginWithStageConfig runs a plugin with per-stage config merged with global config.
+func runPluginWithStageConfig(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pluginName string, stageConfig map[string]interface{}, config *KaloConfig, lockFile *registry.LockFile) error {
+	log.Printf("Running plugin: %s", pluginName)
+
+	pluginDef, exists := config.Plugins[pluginName]
+	if !exists {
+		return fmt.Errorf("plugin %s not found in kalo.yaml", pluginName)
+	}
+
+	pluginLock, exists := lockFile.Plugins[registry.PluginIdentifier(pluginName)]
+	if !exists {
+		return fmt.Errorf("plugin %s not found in kalo.lock", pluginName)
+	}
+
+	// Start with a copy of the plugin definition's config
+	mergedConfig := make(map[string]interface{})
+
+	// 1. First, merge plugin-specific config from global config section
+	if pluginConfig, ok := config.Config[pluginName]; ok {
+		if configMap, ok := pluginConfig.(map[string]any); ok {
+			for k, v := range configMap {
+				mergedConfig[k] = v
+			}
+		}
+	}
+
+	// 2. Then, merge plugin definition's config
+	if pluginDef.Config != nil {
+		for k, v := range pluginDef.Config {
+			mergedConfig[k] = v
+		}
+	}
+
+	// 3. Finally, merge stage-specific config (highest priority)
+	if stageConfig != nil {
+		for k, v := range stageConfig {
+			mergedConfig[k] = v
+		}
+	}
+
+	// Create a copy of pluginDef with merged config
+	pluginDefWithConfig := pluginDef
+	pluginDefWithConfig.Config = mergedConfig
+
+	return executePlugin(ctx, wasmRuntime, kaloHost, pluginLock.Location, config.Stores, pluginDefWithConfig)
 }
 
 func pluginCommand() *cobra.Command {
@@ -594,11 +766,17 @@ type StoreConfig struct {
 	ID        uint32 `json:"id"`
 	Type      string `json:"type"`
 	MountPath string `json:"mountPath,omitempty"`
+
+	// Git provenance (for gitRepository stores)
+	GitRef       string `json:"gitRef,omitempty"`
+	GitCommit    string `json:"gitCommit,omitempty"`
+	GitTimestamp string `json:"gitTimestamp,omitempty"`
 }
 
 func executePlugin(
 	ctx context.Context,
 	wasmRuntime wazero.Runtime,
+	kaloHost *hostfuncs.KaloHost,
 	pluginPath string,
 	stores map[string]Store,
 	pluginDef PluginDefinition,
@@ -617,9 +795,7 @@ func executePlugin(
 	storeConfigs := make(map[string]StoreConfig)
 	fsConfig := wazero.NewFSConfig()
 	var nextStoreID uint32 = 1
-
-	dbHostFuncs := hostfuncs.NewDBHostFunctions()
-	defer dbHostFuncs.Close()
+	var tempDirs []string // Track temp directories for cleanup
 
 	// Helper to configure a store
 	configureStore := func(storeName, mountPath string) error {
@@ -651,6 +827,32 @@ func executePlugin(
 				MountPath: mountPath,
 			}
 
+		case StoreTypeGitRepository:
+			// Checkout files from git ref to a temp directory
+			repoRoot := store.GitRepoRoot()
+			gitRef := store.GitRef()
+			subPath := store.GitSubPath()
+
+			log.Printf("Checking out git ref '%s' for store '%s'", gitRef, storeName)
+
+			checkoutResult, err := checkoutGitRef(repoRoot, gitRef, subPath)
+			if err != nil {
+				return fmt.Errorf("failed to checkout git ref for store '%s': %w", storeName, err)
+			}
+			tempDirs = append(tempDirs, checkoutResult.TempDir)
+
+			fsConfig = fsConfig.WithDirMount(checkoutResult.TempDir, mountPath)
+			log.Printf("Mounting git store '%s' at '%s' (ref: %s, commit: %s)", storeName, mountPath, gitRef, checkoutResult.CommitHash[:8])
+
+			storeConfigs[storeName] = StoreConfig{
+				ID:           storeID,
+				Type:         StoreTypeGitRepository,
+				MountPath:    mountPath,
+				GitRef:       gitRef,
+				GitCommit:    checkoutResult.CommitHash,
+				GitTimestamp: checkoutResult.CommitTime,
+			}
+
 		case StoreTypeCloudSqlDatabase:
 			connString := store.Connection()
 			if connString == "" {
@@ -664,7 +866,7 @@ func executePlugin(
 				return fmt.Errorf("failed to connect to database store '%s': %w", storeName, err)
 			}
 
-			dbHostFuncs.AddConnection(storeID, pool)
+			kaloHost.AddConnection(storeID, pool)
 			log.Printf("Database store '%s' connected (store ID: %d)", storeName, storeID)
 
 			storeConfigs[storeName] = StoreConfig{
@@ -679,17 +881,27 @@ func executePlugin(
 		return nil
 	}
 
-	// Configure input and output stores
+	// Cleanup temp directories when done
+	defer func() {
+		for _, dir := range tempDirs {
+			os.RemoveAll(dir)
+		}
+	}()
+
+	// Configure named inputs (for plugins that need multiple inputs)
+	for inputName, inputSpec := range pluginDef.Inputs {
+		mountPath := "/" + inputName // e.g., /base, /head
+		if err := configureStore(inputSpec.Store, mountPath); err != nil {
+			return err
+		}
+	}
+
+	// Configure default input and output stores
 	if err := configureStore(pluginDef.Input.Store, "/input"); err != nil {
 		return err
 	}
 	if err := configureStore(pluginDef.Output.Store, "/output"); err != nil {
 		return err
-	}
-
-	// Register host functions
-	if err := dbHostFuncs.Register(ctx, wasmRuntime); err != nil {
-		return fmt.Errorf("failed to register host functions: %w", err)
 	}
 
 	// Build plugin config for SDK
@@ -723,6 +935,135 @@ func executePlugin(
 		return fmt.Errorf("failed to instantiate plugin module: %w", err)
 	}
 	defer pluginModule.Close(ctx)
+
+	return nil
+}
+
+// GitCheckoutResult contains the result of checking out a git ref
+type GitCheckoutResult struct {
+	TempDir    string // Path to temp directory with extracted files
+	CommitHash string // Resolved commit hash
+	CommitTime string // Commit timestamp in RFC3339 format
+}
+
+// checkoutGitRef extracts files from a git ref to a temporary directory.
+// It returns the checkout result including temp dir path and commit info.
+func checkoutGitRef(repoRoot, refName, subPath string) (*GitCheckoutResult, error) {
+	// Open the git repository
+	repo, err := git.PlainOpen(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open git repository at '%s': %w", repoRoot, err)
+	}
+
+	// Resolve the reference
+	var hash plumbing.Hash
+	if refName == "HEAD" {
+		ref, err := repo.Head()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get HEAD: %w", err)
+		}
+		hash = ref.Hash()
+	} else {
+		// Try as branch first
+		ref, err := repo.Reference(plumbing.NewBranchReferenceName(refName), true)
+		if err != nil {
+			// Try as tag
+			ref, err = repo.Reference(plumbing.NewTagReferenceName(refName), true)
+			if err != nil {
+				// Try as commit hash
+				hash = plumbing.NewHash(refName)
+				if hash.IsZero() {
+					return nil, fmt.Errorf("could not resolve ref '%s'", refName)
+				}
+			} else {
+				hash = ref.Hash()
+			}
+		} else {
+			hash = ref.Hash()
+		}
+	}
+
+	// Get the commit
+	commit, err := repo.CommitObject(hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit for ref '%s': %w", refName, err)
+	}
+
+	// Get the tree
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree: %w", err)
+	}
+
+	// If subPath is specified, navigate to that subtree
+	if subPath != "" {
+		tree, err = tree.Tree(subPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find subpath '%s' in ref '%s': %w", subPath, refName, err)
+		}
+	}
+
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "kalo-git-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	// Extract files from the tree
+	if err := extractTree(tree, tempDir); err != nil {
+		os.RemoveAll(tempDir)
+		return nil, fmt.Errorf("failed to extract files: %w", err)
+	}
+
+	return &GitCheckoutResult{
+		TempDir:    tempDir,
+		CommitHash: commit.Hash.String(),
+		CommitTime: commit.Author.When.UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// extractTree recursively extracts files from a git tree to a directory.
+func extractTree(tree *object.Tree, destDir string) error {
+	for _, entry := range tree.Entries {
+		destPath := filepath.Join(destDir, entry.Name)
+
+		if entry.Mode.IsFile() {
+			// Extract file
+			file, err := tree.TreeEntryFile(&entry)
+			if err != nil {
+				return fmt.Errorf("failed to get file '%s': %w", entry.Name, err)
+			}
+
+			reader, err := file.Reader()
+			if err != nil {
+				return fmt.Errorf("failed to read file '%s': %w", entry.Name, err)
+			}
+
+			content, err := io.ReadAll(reader)
+			reader.Close()
+			if err != nil {
+				return fmt.Errorf("failed to read content of '%s': %w", entry.Name, err)
+			}
+
+			if err := os.WriteFile(destPath, content, 0644); err != nil {
+				return fmt.Errorf("failed to write file '%s': %w", entry.Name, err)
+			}
+		} else {
+			// It's a directory - recurse
+			subTree, err := tree.Tree(entry.Name)
+			if err != nil {
+				return fmt.Errorf("failed to get subtree '%s': %w", entry.Name, err)
+			}
+
+			if err := os.MkdirAll(destPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory '%s': %w", entry.Name, err)
+			}
+
+			if err := extractTree(subTree, destPath); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }
