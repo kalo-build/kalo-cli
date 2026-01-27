@@ -29,40 +29,106 @@ go build -o kalo ./cmd/kalo
 ## Usage
 
 ```bash
-# Basic usage
+# List available pipelines
+./kalo list
+
+# Run a pipeline by name
+./kalo run compile
+
+# Run a pipeline by alias (if configured)
+./kalo run up        # alias for migrate-up
+./kalo run down      # alias for migrate-down
+
+# Run the default compile pipeline
 ./kalo compile
-
-# Specify a custom configuration file
-./kalo compile -c custom-config.yaml
-
-# Enable debug mode for verbose output
-./kalo compile -d
 ```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `kalo list` | List all available pipelines with descriptions |
+| `kalo run <name>` | Run a pipeline or plugin by name or alias |
+| `kalo compile` | Shorthand for `kalo run compile` |
+| `kalo plugin install` | Install plugins from registry |
 
 ## Configuration
 
-Kalo CLI uses a YAML configuration file (`kalo.yaml` by default) to define specifications, formats, and WASM plugins. Here's an example structure:
+Kalo CLI uses a YAML configuration file (`kalo.yaml` by default) to define stores, plugins, and pipelines.
+
+### Stores
+
+Stores define data sources and destinations:
 
 ```yaml
-specs:
-  "KA:MO1":
-    formats:
-      YAML1:
-        inputMounts:
-          MORPHE_MODELS_DIR_YAML: "${PWD}/morphe/yaml/models"
-          # ... more input mounts
-        
-        outputSpecs:
-          GO1:
-            MORPHE_MODELS_DIR_GO: "${PWD}/morphe/go/models"
-            # ... more output mounts
-        
-        wasmPlugins:
-          - path: "./plugins/morphe-go-struct.wasm"
-            inputSpec: "KA:MO1:YAML1"
-            outputSpec: "KA:MO1:GO1"
-            env:
-              LOG_LEVEL: "debug"
+stores:
+  # Local filesystem store
+  KA_MIGRATIONS:
+    format: "KA:PSQL:MIGRATION1"
+    type: "localFileSystem"
+    options:
+      path: "./migrations"
+
+  # Git repository store (extracts files from a git ref)
+  KA_GIT_MAIN:
+    format: "KA:MO1:YAML1"
+    type: "gitRepository"
+    options:
+      repoRoot: "."
+      ref: "main"
+      subPath: "morphe/registry"
+
+  # Cloud SQL database store
+  DB_MAIN:
+    format: "KA:PSQL:LIVE"
+    type: "cloudSqlDatabase"
+    options:
+      provider: "gcp"
+      connection: "$DATABASE_URL"
+```
+
+### Pipelines
+
+Pipelines define multi-stage workflows:
+
+```yaml
+pipelines:
+  compile:
+    description: "Compile Morphe schemas to PSQL and Go"
+    stages:
+    - name: "psql-types"
+      steps:
+        - "plugin: @kalo-build/plugin-morphe-psql-types"
+
+  migrate-up:
+    description: "Apply pending migrations"
+    alias: "up"  # Enables: kalo run up
+    stages:
+    - name: "up"
+      steps:
+        - "plugin: @kalo-build/plugin-morphe-db-manager"
+      config:
+        mode: "up"
+```
+
+### Plugins
+
+Configure plugin inputs, outputs, and settings:
+
+```yaml
+plugins:
+  "@kalo-build/plugin-morphe-db-manager":
+    version: "v1.0.0"
+    inputs:
+      schema:
+        format: "KA:MO1:PSQL1"
+        store: "KA_MO_PSQL"
+      migrations:
+        format: "KA:PSQL:MIGRATION1"
+        store: "KA_MIGRATIONS"
+    output:
+      format: "KA:PSQL:LIVE"
+      store: "DB_MAIN"
 ```
 
 ## Building WASM Plugins
