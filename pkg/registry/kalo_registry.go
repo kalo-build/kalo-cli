@@ -56,7 +56,73 @@ type PluginMetadata struct {
 	SHA256 string `json:"sha256"`
 
 	// PublishedAt timestamp when the plugin was published
-	PublishedAt time.Time `json:"publishedAt"`
+	PublishedAt time.Time `json:"published_at"`
+
+	// DownloadURL is the relative URL to download the WASM binary
+	DownloadURL string `json:"download_url,omitempty"`
+
+	// ManifestURL is the relative URL to download the plugin manifest
+	ManifestURL string `json:"manifest_url,omitempty"`
+
+	// WasmPath is the path to the WASM file in storage
+	WasmPath string `json:"wasm_path,omitempty"`
+}
+
+// PluginManifest represents the plugin.yaml manifest
+type PluginManifest struct {
+	Name        string `yaml:"name"`
+	DisplayName string `yaml:"displayName"`
+	Description string `yaml:"description"`
+	Version     string `yaml:"version"`
+
+	// Single input (for simple plugins)
+	Input *ManifestIOSpec `yaml:"input,omitempty"`
+	// Multiple named inputs
+	Inputs map[string]*ManifestIOSpec `yaml:"inputs,omitempty"`
+
+	// Single output (for simple plugins)
+	Output *ManifestIOSpec `yaml:"output,omitempty"`
+	// Multiple named outputs
+	Outputs map[string]*ManifestIOSpec `yaml:"outputs,omitempty"`
+
+	// Optional modes (for plugins like db-manager)
+	Modes map[string]ManifestMode `yaml:"modes,omitempty"`
+
+	// Configuration schema
+	ConfigSchema map[string]ManifestConfigOption `yaml:"configSchema,omitempty"`
+}
+
+// ManifestIOSpec represents an input or output specification in the manifest
+type ManifestIOSpec struct {
+	Format         string         `yaml:"format"`
+	Description    string         `yaml:"description,omitempty"`
+	SuggestedStore SuggestedStore `yaml:"suggestedStore,omitempty"`
+}
+
+// SuggestedStore represents the suggested store configuration
+type SuggestedStore struct {
+	Name       string `yaml:"name"`
+	Type       string `yaml:"type"`
+	Path       string `yaml:"path,omitempty"`       // for localFileSystem
+	RepoRoot   string `yaml:"repoRoot,omitempty"`   // for gitRepository
+	Ref        string `yaml:"ref,omitempty"`        // for gitRepository
+	SubPath    string `yaml:"subPath,omitempty"`    // for gitRepository
+	Connection string `yaml:"connection,omitempty"` // for cloudSqlDatabase
+}
+
+// ManifestMode represents a plugin execution mode
+type ManifestMode struct {
+	Description    string `yaml:"description"`
+	ProductionSafe bool   `yaml:"productionSafe"`
+	IsDefault      bool   `yaml:"isDefault,omitempty"`
+}
+
+// ManifestConfigOption represents a configuration option schema
+type ManifestConfigOption struct {
+	Type        string `yaml:"type"`
+	Default     any    `yaml:"default,omitempty"`
+	Required    bool   `yaml:"required,omitempty"`
+	Description string `yaml:"description,omitempty"`
 }
 
 // PluginLockInfo represents a plugin entry in the lockfile

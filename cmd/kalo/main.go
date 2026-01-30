@@ -104,9 +104,9 @@ type Stage struct {
 // PluginDefinition represents a plugin configuration
 type PluginDefinition struct {
 	Version string                  `yaml:"version"`
-	Input   PluginIOSpec            `yaml:"input"`
+	Input   *PluginIOSpec           `yaml:"input,omitempty"`
 	Inputs  map[string]PluginIOSpec `yaml:"inputs,omitempty"` // Multiple named inputs
-	Output  PluginIOSpec            `yaml:"output,omitempty"`
+	Output  *PluginIOSpec           `yaml:"output,omitempty"`
 	Config  map[string]any          `yaml:"config,omitempty"`
 }
 
@@ -317,6 +317,17 @@ func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *
 		return fmt.Errorf("plugin %s not found in kalo.lock", pluginName)
 	}
 
+	// Check if plugin file exists, if not attempt to download
+	pluginPath := pluginLock.Location
+	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
+		log.Printf("Plugin %s not found at %s, attempting download...", pluginName, pluginPath)
+		downloadedPath, downloadErr := downloadPluginFromRegistry(pluginName, string(pluginDef.Version))
+		if downloadErr != nil {
+			return fmt.Errorf("plugin file not found and download failed: %w", downloadErr)
+		}
+		pluginPath = downloadedPath
+	}
+
 	// Merge plugin-specific config from config section
 	if pluginConfig, ok := config.Config[pluginName]; ok {
 		if configMap, ok := pluginConfig.(map[string]any); ok {
@@ -330,7 +341,7 @@ func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *
 		}
 	}
 
-	return executePlugin(ctx, wasmRuntime, kaloHost, pluginLock.Location, config.Stores, pluginDef)
+	return executePlugin(ctx, wasmRuntime, kaloHost, pluginPath, config.Stores, pluginDef)
 }
 
 // resolvePipeline looks up a pipeline by name or alias.
@@ -397,6 +408,17 @@ func runPluginWithStageConfig(ctx context.Context, wasmRuntime wazero.Runtime, k
 		return fmt.Errorf("plugin %s not found in kalo.lock", pluginName)
 	}
 
+	// Check if plugin file exists, if not attempt to download
+	pluginPath := pluginLock.Location
+	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
+		log.Printf("Plugin %s not found at %s, attempting download...", pluginName, pluginPath)
+		downloadedPath, downloadErr := downloadPluginFromRegistry(pluginName, string(pluginDef.Version))
+		if downloadErr != nil {
+			return fmt.Errorf("plugin file not found and download failed: %w", downloadErr)
+		}
+		pluginPath = downloadedPath
+	}
+
 	// Start with a copy of the plugin definition's config
 	mergedConfig := make(map[string]interface{})
 
@@ -427,7 +449,7 @@ func runPluginWithStageConfig(ctx context.Context, wasmRuntime wazero.Runtime, k
 	pluginDefWithConfig := pluginDef
 	pluginDefWithConfig.Config = mergedConfig
 
-	return executePlugin(ctx, wasmRuntime, kaloHost, pluginLock.Location, config.Stores, pluginDefWithConfig)
+	return executePlugin(ctx, wasmRuntime, kaloHost, pluginPath, config.Stores, pluginDefWithConfig)
 }
 
 func pluginCommand() *cobra.Command {
@@ -497,44 +519,51 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get plugin metadata: %w", err)
 	}
 
-	// Load kalo.yaml
+	// Try to get plugin manifest for better configuration
+	manifest, err := client.GetPluginManifest(pluginID, version)
+	if err != nil {
+		log.Printf("Warning: Could not fetch plugin manifest: %v", err)
+		// Continue without manifest
+	}
+
+	// Load existing kalo.yaml or create a new one
 	config, err := readKaloConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load kalo.yaml: %w", err)
-	}
-
-	// Generate store names from format specs (e.g., "KA:MO1:YAML1" -> "KA_MO_YAML")
-	inputStoreName := formatToStoreName(metadata.InputSpec)
-	outputStoreName := formatToStoreName(metadata.OutputSpec)
-
-	// Create default stores if they don't exist
-	if config.Stores == nil {
-		config.Stores = make(map[string]Store)
-	}
-
-	// Add input store if it doesn't exist
-	if _, exists := config.Stores[inputStoreName]; !exists {
-		config.Stores[inputStoreName] = Store{
-			Format: metadata.InputSpec,
-			Type:   StoreTypeLocalFileSystem,
-			Options: map[string]any{
-				"path": "$" + inputStoreName + "_PATH",
-			},
-		}
-		fmt.Printf("Created store: %s (set %s_PATH env var)\n", inputStoreName, inputStoreName)
-	}
-
-	// Add output store if it doesn't exist and differs from input
-	if outputStoreName != inputStoreName {
-		if _, exists := config.Stores[outputStoreName]; !exists {
-			config.Stores[outputStoreName] = Store{
-				Format: metadata.OutputSpec,
-				Type:   StoreTypeLocalFileSystem,
-				Options: map[string]any{
-					"path": "$" + outputStoreName + "_PATH",
-				},
+		// Create a new config if kalo.yaml doesn't exist
+		if os.IsNotExist(err) || strings.Contains(err.Error(), "cannot find the file") {
+			fmt.Println("Creating new kalo.yaml...")
+			config = &KaloConfig{
+				Stores:    make(map[string]Store),
+				Config:    make(map[string]interface{}),
+				Pipelines: make(map[string]Pipeline),
+				Plugins:   make(map[string]PluginDefinition),
 			}
-			fmt.Printf("Created store: %s (set %s_PATH env var)\n", outputStoreName, outputStoreName)
+		} else {
+			return fmt.Errorf("failed to load kalo.yaml: %w", err)
+		}
+	}
+
+	// Check if plugin is already installed with same version
+	if existingPlugin, exists := config.Plugins[string(pluginID)]; exists {
+		if existingPlugin.Version == string(version) {
+			fmt.Printf("Plugin %s@%s is already installed.\n", pluginID, version)
+			fmt.Println("Nothing to do.")
+			return nil
+		}
+		fmt.Printf("Updating %s from %s to %s...\n", pluginID, existingPlugin.Version, version)
+	}
+
+	// Configure stores and plugin definition based on manifest or fallback to metadata
+	var pluginDef PluginDefinition
+	if manifest != nil {
+		pluginDef, err = configureFromManifest(config, manifest, string(version))
+		if err != nil {
+			return fmt.Errorf("failed to configure from manifest: %w", err)
+		}
+	} else {
+		pluginDef, err = configureFromMetadata(config, metadata, string(version))
+		if err != nil {
+			return fmt.Errorf("failed to configure from metadata: %w", err)
 		}
 	}
 
@@ -542,16 +571,51 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	if config.Plugins == nil {
 		config.Plugins = make(map[string]PluginDefinition)
 	}
-	config.Plugins[string(pluginID)] = PluginDefinition{
-		Version: string(version),
-		Input: PluginIOSpec{
-			Format: metadata.InputSpec,
-			Store:  inputStoreName,
-		},
-		Output: PluginIOSpec{
-			Format: metadata.OutputSpec,
-			Store:  outputStoreName,
-		},
+	config.Plugins[string(pluginID)] = pluginDef
+
+	// Add config section for the plugin with defaults from manifest
+	if config.Config == nil {
+		config.Config = make(map[string]interface{})
+	}
+	if _, exists := config.Config[string(pluginID)]; !exists {
+		pluginConfig := make(map[string]interface{})
+		// Populate with default values from manifest's configSchema
+		if manifest != nil && manifest.ConfigSchema != nil {
+			for key, option := range manifest.ConfigSchema {
+				if option.Default != nil {
+					pluginConfig[key] = option.Default
+				}
+			}
+		}
+		config.Config[string(pluginID)] = pluginConfig
+	}
+
+	// Create a default pipeline if none exist
+	if config.Pipelines == nil {
+		config.Pipelines = make(map[string]Pipeline)
+	}
+	if len(config.Pipelines) == 0 {
+		pipelineName := "compile"
+		if manifest != nil && manifest.Modes != nil {
+			// For plugins with modes, use the default mode name
+			for name, mode := range manifest.Modes {
+				if mode.IsDefault {
+					pipelineName = name
+					break
+				}
+			}
+		}
+
+		config.Pipelines[pipelineName] = Pipeline{
+			Description: fmt.Sprintf("Run %s", pluginID),
+			Stages: []Stage{
+				{
+					Name:  pipelineName,
+					Steps: []string{fmt.Sprintf("plugin: %s", pluginID)},
+				},
+			},
+		}
+		fmt.Printf("Created pipeline: %s\n", pipelineName)
 	}
 
 	// Save kalo.yaml
@@ -584,6 +648,151 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Successfully installed %s@%s to %s\n", pluginID, version, localPath)
 	return nil
+}
+
+// configureFromManifest creates stores and plugin definition based on manifest
+func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest, version string) (PluginDefinition, error) {
+	pluginDef := PluginDefinition{
+		Version: version,
+	}
+
+	// Helper to add a store from suggested store config
+	addStore := func(spec *registry.ManifestIOSpec) (string, error) {
+		if spec == nil {
+			return "", nil
+		}
+
+		storeName := spec.SuggestedStore.Name
+		if storeName == "" {
+			// Generate store name from format
+			storeName = formatToStoreName(spec.Format)
+		}
+
+		// Add store if it doesn't exist
+		if _, exists := config.Stores[storeName]; !exists {
+			store := Store{
+				Format:  spec.Format,
+				Type:    spec.SuggestedStore.Type,
+				Options: make(map[string]any),
+			}
+
+			// Set default type if not specified
+			if store.Type == "" {
+				store.Type = StoreTypeLocalFileSystem
+			}
+
+			// Configure based on store type
+			switch store.Type {
+			case StoreTypeLocalFileSystem:
+				path := spec.SuggestedStore.Path
+				if path == "" {
+					path = "./" + strings.ToLower(storeName)
+				}
+				store.Options["path"] = path
+			case StoreTypeGitRepository:
+				store.Options["repoRoot"] = spec.SuggestedStore.RepoRoot
+				store.Options["ref"] = spec.SuggestedStore.Ref
+				store.Options["subPath"] = spec.SuggestedStore.SubPath
+			case StoreTypeCloudSqlDatabase:
+				conn := spec.SuggestedStore.Connection
+				if conn == "" {
+					conn = "$DATABASE_URL"
+				}
+				store.Options["connection"] = conn
+			}
+
+			config.Stores[storeName] = store
+			fmt.Printf("Created store: %s (%s)\n", storeName, store.Type)
+		}
+
+		return storeName, nil
+	}
+
+	// Handle single input
+	if manifest.Input != nil {
+		storeName, err := addStore(manifest.Input)
+		if err != nil {
+			return pluginDef, err
+		}
+		pluginDef.Input = &PluginIOSpec{
+			Format: manifest.Input.Format,
+			Store:  storeName,
+		}
+	}
+
+	// Handle multiple inputs
+	if manifest.Inputs != nil {
+		pluginDef.Inputs = make(map[string]PluginIOSpec)
+		for name, spec := range manifest.Inputs {
+			storeName, err := addStore(spec)
+			if err != nil {
+				return pluginDef, err
+			}
+			pluginDef.Inputs[name] = PluginIOSpec{
+				Format: spec.Format,
+				Store:  storeName,
+			}
+		}
+	}
+
+	// Handle single output
+	if manifest.Output != nil {
+		storeName, err := addStore(manifest.Output)
+		if err != nil {
+			return pluginDef, err
+		}
+		pluginDef.Output = &PluginIOSpec{
+			Format: manifest.Output.Format,
+			Store:  storeName,
+		}
+	}
+
+	return pluginDef, nil
+}
+
+// configureFromMetadata creates stores and plugin definition based on legacy metadata
+func configureFromMetadata(config *KaloConfig, metadata *registry.PluginMetadata, version string) (PluginDefinition, error) {
+	// Generate store names from format specs
+	inputStoreName := formatToStoreName(metadata.InputSpec)
+	outputStoreName := formatToStoreName(metadata.OutputSpec)
+
+	// Add input store if it doesn't exist
+	if _, exists := config.Stores[inputStoreName]; !exists && metadata.InputSpec != "" {
+		config.Stores[inputStoreName] = Store{
+			Format: metadata.InputSpec,
+			Type:   StoreTypeLocalFileSystem,
+			Options: map[string]any{
+				"path": "$" + inputStoreName + "_PATH",
+			},
+		}
+		fmt.Printf("Created store: %s (set %s_PATH env var)\n", inputStoreName, inputStoreName)
+	}
+
+	// Add output store if it doesn't exist and differs from input
+	if outputStoreName != inputStoreName && metadata.OutputSpec != "" {
+		if _, exists := config.Stores[outputStoreName]; !exists {
+			config.Stores[outputStoreName] = Store{
+				Format: metadata.OutputSpec,
+				Type:   StoreTypeLocalFileSystem,
+				Options: map[string]any{
+					"path": "$" + outputStoreName + "_PATH",
+				},
+			}
+			fmt.Printf("Created store: %s (set %s_PATH env var)\n", outputStoreName, outputStoreName)
+		}
+	}
+
+	return PluginDefinition{
+		Version: version,
+		Input: &PluginIOSpec{
+			Format: metadata.InputSpec,
+			Store:  inputStoreName,
+		},
+		Output: &PluginIOSpec{
+			Format: metadata.OutputSpec,
+			Store:  outputStoreName,
+		},
+	}, nil
 }
 
 func parsePluginArg(arg string) (registry.PluginIdentifier, registry.PluginVersion, error) {
@@ -725,18 +934,52 @@ func formatToStoreName(format string) string {
 }
 
 func saveKaloConfig(path string, config *KaloConfig) error {
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return err
+	// Marshal each section separately and join with blank lines for readability
+	var sections []string
+
+	if len(config.Stores) > 0 {
+		storesData, err := yaml.Marshal(map[string]interface{}{"stores": config.Stores})
+		if err != nil {
+			return err
+		}
+		sections = append(sections, string(storesData))
 	}
 
-	return os.WriteFile(path, data, 0644)
+	if len(config.Config) > 0 {
+		configData, err := yaml.Marshal(map[string]interface{}{"config": config.Config})
+		if err != nil {
+			return err
+		}
+		sections = append(sections, string(configData))
+	}
+
+	if len(config.Pipelines) > 0 {
+		pipelinesData, err := yaml.Marshal(map[string]interface{}{"pipelines": config.Pipelines})
+		if err != nil {
+			return err
+		}
+		sections = append(sections, string(pipelinesData))
+	}
+
+	if len(config.Plugins) > 0 {
+		pluginsData, err := yaml.Marshal(map[string]interface{}{"plugins": config.Plugins})
+		if err != nil {
+			return err
+		}
+		sections = append(sections, string(pluginsData))
+	}
+
+	// Join sections with blank lines
+	content := strings.Join(sections, "\n")
+
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 func readKaloConfig() (*KaloConfig, error) {
 	data, err := os.ReadFile(KaloConfigFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read kalo.yaml: %w", err)
+		// Return the raw error for proper file-not-found detection
+		return nil, err
 	}
 
 	var config KaloConfig
@@ -759,6 +1002,27 @@ func readKaloLock() (*registry.LockFile, error) {
 	}
 
 	return &lockFile, nil
+}
+
+// downloadPluginFromRegistry downloads a plugin from the registry or GCS fallback
+func downloadPluginFromRegistry(pluginName, version string) (string, error) {
+	client := registry.NewRegistryClient(&registry.RegistryClientOptions{
+		CacheDir: DefaultPluginCache,
+	})
+
+	// Use the version from kalo.yaml, default to v1.0.0 if empty
+	pluginVersion := registry.PluginVersion(version)
+	if pluginVersion == "" {
+		pluginVersion = "v1.0.0"
+	}
+
+	downloadedPath, err := client.DownloadPlugin(registry.PluginIdentifier(pluginName), pluginVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to download plugin %s@%s: %w", pluginName, pluginVersion, err)
+	}
+
+	log.Printf("Downloaded plugin %s@%s to %s", pluginName, pluginVersion, downloadedPath)
+	return downloadedPath, nil
 }
 
 // StoreConfig represents the configuration for a store passed to the SDK.
@@ -897,11 +1161,15 @@ func executePlugin(
 	}
 
 	// Configure default input and output stores
-	if err := configureStore(pluginDef.Input.Store, "/input"); err != nil {
-		return err
+	if pluginDef.Input != nil && pluginDef.Input.Store != "" {
+		if err := configureStore(pluginDef.Input.Store, "/input"); err != nil {
+			return err
+		}
 	}
-	if err := configureStore(pluginDef.Output.Store, "/output"); err != nil {
-		return err
+	if pluginDef.Output != nil && pluginDef.Output.Store != "" {
+		if err := configureStore(pluginDef.Output.Store, "/output"); err != nil {
+			return err
+		}
 	}
 
 	// Build plugin config for SDK
@@ -911,11 +1179,15 @@ func executePlugin(
 	}
 
 	// Add legacy paths for backward compatibility
-	if inputCfg, ok := storeConfigs[pluginDef.Input.Store]; ok && inputCfg.MountPath != "" {
-		config["inputPath"] = inputCfg.MountPath
+	if pluginDef.Input != nil {
+		if inputCfg, ok := storeConfigs[pluginDef.Input.Store]; ok && inputCfg.MountPath != "" {
+			config["inputPath"] = inputCfg.MountPath
+		}
 	}
-	if outputCfg, ok := storeConfigs[pluginDef.Output.Store]; ok && outputCfg.MountPath != "" {
-		config["outputPath"] = outputCfg.MountPath
+	if pluginDef.Output != nil {
+		if outputCfg, ok := storeConfigs[pluginDef.Output.Store]; ok && outputCfg.MountPath != "" {
+			config["outputPath"] = outputCfg.MountPath
+		}
 	}
 
 	configJsonBytes, err := json.Marshal(config)

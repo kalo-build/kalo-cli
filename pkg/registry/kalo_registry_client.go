@@ -1,10 +1,12 @@
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,12 +82,22 @@ func (c *RegistryClient) GetPluginMetadata(id PluginIdentifier, version PluginVe
 		return nil, fmt.Errorf("cannot fetch plugin metadata in offline mode")
 	}
 
-	url := fmt.Sprintf("%s/v1/plugins/%s/versions/%s", c.options.RegistryURL, id, version)
-	resp, err := c.httpClient.Get(url)
+	// Use resolve endpoint with query parameters to handle scoped plugin names (containing /)
+	reqURL := fmt.Sprintf("%s/api/plugins/resolve?name=%s&version=%s",
+		c.options.RegistryURL,
+		url.QueryEscape(string(id)),
+		url.QueryEscape(string(version)))
+
+	resp, err := c.httpClient.Get(reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch plugin metadata: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch plugin metadata: HTTP %d: %s", resp.StatusCode, string(body))
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -93,7 +105,7 @@ func (c *RegistryClient) GetPluginMetadata(id PluginIdentifier, version PluginVe
 	}
 
 	var metadata PluginMetadata
-	err = yaml.Unmarshal(body, &metadata)
+	err = json.Unmarshal(body, &metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal plugin metadata: %w", err)
 	}
@@ -108,7 +120,7 @@ func (c *RegistryClient) SearchPlugins(query string, tags []string) ([]PluginMet
 	}
 
 	// Make an HTTP request to the registry API
-	url := fmt.Sprintf("%s/v1/plugins?query=%s&tags=%s", c.options.RegistryURL, query, strings.Join(tags, ","))
+	url := fmt.Sprintf("%s/api/plugins?query=%s&tags=%s", c.options.RegistryURL, query, strings.Join(tags, ","))
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search plugins: %w", err)
@@ -152,17 +164,23 @@ func (c *RegistryClient) DownloadPlugin(id PluginIdentifier, version PluginVersi
 
 	// Check if plugin is already downloaded and verified
 	if _, err := os.Stat(localPath); err == nil {
-		// Verify hash of existing file
-		hash, err := CalculateSHA256(localPath)
-		if err == nil && hash == metadata.SHA256 {
+		// Verify hash of existing file (skip if hash is empty)
+		if metadata.SHA256 != "" {
+			hash, err := CalculateSHA256(localPath)
+			if err == nil && hash == metadata.SHA256 {
+				return localPath, nil
+			}
+			// If hash verification fails, re-download
+			_ = os.Remove(localPath)
+		} else {
+			// No hash to verify, assume cached file is valid
 			return localPath, nil
 		}
-		// If hash verification fails, re-download
-		_ = os.Remove(localPath)
 	}
 
-	url := fmt.Sprintf("%s/v1/plugins/%s/versions/%s/download", c.options.RegistryURL, id, version)
-	resp, err := c.httpClient.Get(url)
+	// Use the download URL from metadata
+	reqURL := c.options.RegistryURL + metadata.DownloadURL
+	resp, err := c.httpClient.Get(reqURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to download plugin: %w", err)
 	}
@@ -202,14 +220,16 @@ func (c *RegistryClient) DownloadPlugin(id PluginIdentifier, version PluginVersi
 		return "", fmt.Errorf("failed to close file: %w", err)
 	}
 
-	// Verify hash
-	hash, err := CalculateSHA256(tmpFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to calculate hash: %w", err)
-	}
+	// Verify hash (skip if no expected hash)
+	if metadata.SHA256 != "" {
+		hash, err := CalculateSHA256(tmpFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to calculate hash: %w", err)
+		}
 
-	if hash != metadata.SHA256 {
-		return "", fmt.Errorf("hash mismatch: expected %s, got %s", metadata.SHA256, hash)
+		if hash != metadata.SHA256 {
+			return "", fmt.Errorf("hash mismatch: expected %s, got %s", metadata.SHA256, hash)
+		}
 	}
 
 	// Move temporary file to final location
@@ -387,4 +407,53 @@ func (c *RegistryClient) getPluginFilename(id PluginIdentifier, version PluginVe
 	name = strings.TrimPrefix(name, "@")
 
 	return fmt.Sprintf("%s-%s.wasm", name, version)
+}
+
+// GetPluginManifest fetches the plugin manifest (plugin.yaml) from the registry
+func (c *RegistryClient) GetPluginManifest(id PluginIdentifier, version PluginVersion) (*PluginManifest, error) {
+	if c.options.OfflineMode {
+		return nil, fmt.Errorf("cannot fetch plugin manifest in offline mode")
+	}
+
+	// First get metadata to get the manifest URL
+	metadata, err := c.GetPluginMetadata(id, version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plugin metadata: %w", err)
+	}
+
+	// If no manifest URL, return nil (manifest not available)
+	if metadata.ManifestURL == "" {
+		return nil, nil
+	}
+
+	// Fetch the manifest
+	reqURL := c.options.RegistryURL + metadata.ManifestURL
+	resp, err := c.httpClient.Get(reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch plugin manifest: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 404 means manifest doesn't exist (older plugin)
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch plugin manifest: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read plugin manifest: %w", err)
+	}
+
+	var manifest PluginManifest
+	err = yaml.Unmarshal(body, &manifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal plugin manifest: %w", err)
+	}
+
+	return &manifest, nil
 }
