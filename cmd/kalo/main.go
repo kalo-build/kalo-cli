@@ -124,6 +124,13 @@ const (
 	DefaultPluginCache = ".kalo/plugins"
 )
 
+// Version information - injected by GoReleaser at build time
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
@@ -134,7 +141,7 @@ func main() {
 		Use:     "kalo",
 		Short:   "Kalo CLI is a tool for managing Kalo projects",
 		Long:    `Kalo CLI helps you manage Kalo projects, run plugins, and more.`,
-		Version: "0.0.1",
+		Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
 	}
 
 	rootCmd.AddCommand(compileCommand())

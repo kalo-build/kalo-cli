@@ -1,0 +1,103 @@
+# GoReleaser configuration for kalo CLI
+# https://goreleaser.com
+
+version: 2
+
+project_name: kalo
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kalo
+    main: ./cmd/kalo
+    binary: kalo
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: kalo-build
+    name: kalo-cli
+  prerelease: auto
+  draft: false
+
+# Homebrew tap (optional - create kalo-build/homebrew-tap repo first)
+brews:
+  - name: kalo
+    repository:
+      owner: kalo-build
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/kalo-build/kalo-cli"
+    description: "Kalo CLI - Plugin-based code generation and database management"
+    license: "MIT"
+    skip_upload: false
+    test: |
+      system "#{bin}/kalo", "--version"
+    install: |
+      bin.install "kalo"
+
+# Scoop bucket (optional - create kalo-build/scoop-bucket repo first)
+scoops:
+  - name: kalo
+    repository:
+      owner: kalo-build
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    homepage: "https://github.com/kalo-build/kalo-cli"
+    description: "Kalo CLI - Plugin-based code generation and database management"
+    license: "MIT"
+    skip_upload: false

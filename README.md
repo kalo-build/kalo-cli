@@ -17,12 +17,54 @@ Kalo CLI enables the seamless compilation of Morphe models, entities, enums, and
 
 ## Installation
 
+### Quick Install (Recommended)
+
+**macOS / Linux:**
 ```bash
-# Clone the repository
+curl -fsSL https://raw.githubusercontent.com/kalo-build/kalo-cli/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/kalo-build/kalo-cli/main/install.ps1 | iex
+```
+
+### Homebrew (macOS / Linux)
+
+```bash
+# Install directly (auto-taps the repo)
+brew install kalo-build/tap/kalo
+
+# Or manually tap first
+brew tap kalo-build/tap
+brew install kalo
+```
+
+### Scoop (Windows)
+
+```powershell
+# Add the bucket (one-time)
+scoop bucket add kalo https://github.com/kalo-build/scoop-bucket
+
+# Install
+scoop install kalo
+```
+
+### Go Install
+
+```bash
+go install github.com/kalo-build/kalo-cli/cmd/kalo@latest
+```
+
+### Manual Download
+
+Download the latest release from [GitHub Releases](https://github.com/kalo-build/kalo-cli/releases).
+
+### Build from Source
+
+```bash
 git clone https://github.com/kalo-build/kalo-cli.git
 cd kalo-cli
-
-# Build the CLI tool
 go build -o kalo ./cmd/kalo
 ```
 
