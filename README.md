@@ -194,4 +194,4 @@ BASE_DIR=/path/to/morphe/files
 
 ## License
 
-[TBD](LICENSE)
+[MIT License](LICENSE)

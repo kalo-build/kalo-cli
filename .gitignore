@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+*.wasm
 
 # Test binary, built with `go test -c`
 *.test
@@ -23,3 +24,16 @@ go.work.sum
 
 # env file
 .env
+
+# IDE
+.cursor/
+.idea/
+.vscode/
+
+# Build artifacts
+dist/
+
+# Kalo local files (project-specific, not part of CLI distribution)
+kalo.yaml
+kalo.lock
+.kalo/
