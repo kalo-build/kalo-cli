@@ -71,28 +71,35 @@ go build -o kalo ./cmd/kalo
 ## Usage
 
 ```bash
+# Install all plugins from kalo.yaml (like npm install)
+kalo install
+
 # List available pipelines
-./kalo list
+kalo list
 
 # Run a pipeline by name
-./kalo run compile
+kalo run compile
 
 # Run a pipeline by alias (if configured)
-./kalo run up        # alias for migrate-up
-./kalo run down      # alias for migrate-down
+kalo run up        # alias for migrate-up
+kalo run down      # alias for migrate-down
 
 # Run the default compile pipeline
-./kalo compile
+kalo compile
+
+# Install a specific plugin (adds to kalo.yaml if not present)
+kalo plugin install @kalo-build/plugin-morphe-go-struct
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
+| `kalo install` | Download all plugins from kalo.yaml (like `npm install`) |
 | `kalo list` | List all available pipelines with descriptions |
 | `kalo run <name>` | Run a pipeline or plugin by name or alias |
 | `kalo compile` | Shorthand for `kalo run compile` |
-| `kalo plugin install` | Install plugins from registry |
+| `kalo plugin install <plugin>` | Install a specific plugin from registry |
 
 ## Configuration
 

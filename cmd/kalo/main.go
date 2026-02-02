@@ -148,6 +148,7 @@ func main() {
 	rootCmd.AddCommand(runCommand())
 	rootCmd.AddCommand(pluginCommand())
 	rootCmd.AddCommand(listCommand())
+	rootCmd.AddCommand(installCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -206,6 +207,129 @@ func listCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+func installCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install all plugins from kalo.yaml",
+		Long: `Download all plugins defined in kalo.yaml to the local cache.
+
+This is similar to 'npm install' - it reads the existing configuration
+and ensures all required plugins are downloaded locally.
+
+If a kalo.lock file exists, plugins are downloaded at the locked versions.
+If no lock file exists, one will be generated.
+
+This command does NOT modify kalo.yaml - it only downloads plugins.
+
+Examples:
+  kalo install                    # Install all plugins from kalo.yaml
+  kalo plugin install <plugin>    # Install a specific plugin (may modify kalo.yaml)`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := runInstall(); err != nil {
+				log.Fatalf("Install failed: %v", err)
+			}
+			log.Println("Install completed successfully")
+		},
+	}
+
+	return cmd
+}
+
+// runInstall downloads all plugins defined in kalo.yaml
+func runInstall() error {
+	// Read kalo.yaml
+	config, err := readKaloConfig()
+	if err != nil {
+		return fmt.Errorf("failed to read kalo.yaml: %w", err)
+	}
+
+	if len(config.Plugins) == 0 {
+		fmt.Println("No plugins defined in kalo.yaml")
+		return nil
+	}
+
+	// Create registry client
+	registryURL := os.Getenv("KALO_REGISTRY_URL")
+	if registryURL == "" {
+		registryURL = DefaultRegistryURL
+	}
+
+	client := registry.NewRegistryClient(&registry.RegistryClientOptions{
+		RegistryURL: registryURL,
+		CacheDir:    DefaultPluginCache,
+		OfflineMode: false,
+	})
+
+	// Try to read existing lockfile
+	lockFile, lockErr := readKaloLock()
+	if lockErr != nil {
+		fmt.Println("No kalo.lock found, will generate one...")
+		lockFile = nil
+	}
+
+	// Download each plugin
+	var downloadErrors []string
+	downloadCount := 0
+
+	for pluginID, pluginDef := range config.Plugins {
+		version := registry.PluginVersion(pluginDef.Version)
+
+		// Check if we have a locked version
+		if lockFile != nil {
+			if lockedPlugin, exists := lockFile.Plugins[registry.PluginIdentifier(pluginID)]; exists {
+				// Use locked version
+				version = lockedPlugin.Version
+
+				// Check if already downloaded
+				if _, err := os.Stat(lockedPlugin.Location); err == nil {
+					fmt.Printf("  %s@%s - already installed\n", pluginID, version)
+					continue
+				}
+			}
+		}
+
+		// Download the plugin
+		fmt.Printf("  %s@%s - downloading...\n", pluginID, version)
+		localPath, err := client.DownloadPlugin(registry.PluginIdentifier(pluginID), version)
+		if err != nil {
+			downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %v", pluginID, err))
+			continue
+		}
+
+		fmt.Printf("  %s@%s - installed to %s\n", pluginID, version, localPath)
+		downloadCount++
+	}
+
+	// Generate/update lockfile
+	pluginVersions := make(map[registry.PluginIdentifier]registry.PluginVersion)
+	for id, plugin := range config.Plugins {
+		pluginVersions[registry.PluginIdentifier(id)] = registry.PluginVersion(plugin.Version)
+	}
+
+	newLockFile, err := client.GenerateLockFile(KaloConfigFile, pluginVersions)
+	if err != nil {
+		return fmt.Errorf("failed to generate lockfile: %w", err)
+	}
+
+	err = client.SaveLockFile(newLockFile, KaloLockFile)
+	if err != nil {
+		return fmt.Errorf("failed to save lockfile: %w", err)
+	}
+
+	// Report results
+	fmt.Println()
+	if len(downloadErrors) > 0 {
+		fmt.Printf("Downloaded %d plugins with %d errors:\n", downloadCount, len(downloadErrors))
+		for _, errMsg := range downloadErrors {
+			fmt.Printf("  - %s\n", errMsg)
+		}
+		return fmt.Errorf("%d plugins failed to download", len(downloadErrors))
+	}
+
+	fmt.Printf("Installed %d plugins\n", downloadCount)
+	return nil
 }
 
 // listPipelines reads kalo.yaml and displays all available pipelines
@@ -507,23 +631,19 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		OfflineMode: false,
 	})
 
-	// If no version specified, get latest
-	if version == "" {
-		metadata, err := client.SearchPlugins(string(pluginID), nil)
-		if err != nil {
-			return fmt.Errorf("failed to search for plugin: %w", err)
-		}
-		if len(metadata) == 0 {
-			return fmt.Errorf("plugin %s not found", pluginID)
-		}
-		// Use the latest version
-		version = metadata[0].Version
-	}
-
-	// Get plugin metadata to verify it exists
+	// Get plugin metadata (resolve endpoint returns latest if no version specified)
 	metadata, err := client.GetPluginMetadata(pluginID, version)
 	if err != nil {
 		return fmt.Errorf("failed to get plugin metadata: %w", err)
+	}
+
+	// If no version was specified, use the resolved version from metadata
+	if version == "" {
+		version = metadata.Version
+		if version == "" {
+			return fmt.Errorf("plugin %s found but no version available", pluginID)
+		}
+		fmt.Printf("Resolved latest version: %s\n", version)
 	}
 
 	// Try to get plugin manifest for better configuration
@@ -550,27 +670,33 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check if plugin is already installed with same version
+	// Check if plugin is already installed
+	var pluginDef PluginDefinition
+	var isNewInstall bool
 	if existingPlugin, exists := config.Plugins[string(pluginID)]; exists {
 		if existingPlugin.Version == string(version) {
 			fmt.Printf("Plugin %s@%s is already installed.\n", pluginID, version)
 			fmt.Println("Nothing to do.")
 			return nil
 		}
+		// Update existing plugin - only change the version, preserve existing config
 		fmt.Printf("Updating %s from %s to %s...\n", pluginID, existingPlugin.Version, version)
-	}
-
-	// Configure stores and plugin definition based on manifest or fallback to metadata
-	var pluginDef PluginDefinition
-	if manifest != nil {
-		pluginDef, err = configureFromManifest(config, manifest, string(version))
-		if err != nil {
-			return fmt.Errorf("failed to configure from manifest: %w", err)
-		}
+		pluginDef = existingPlugin
+		pluginDef.Version = string(version)
+		isNewInstall = false
 	} else {
-		pluginDef, err = configureFromMetadata(config, metadata, string(version))
-		if err != nil {
-			return fmt.Errorf("failed to configure from metadata: %w", err)
+		// New install - configure stores and plugin definition based on manifest
+		isNewInstall = true
+		if manifest != nil {
+			pluginDef, err = configureFromManifest(config, manifest, string(version))
+			if err != nil {
+				return fmt.Errorf("failed to configure from manifest: %w", err)
+			}
+		} else {
+			pluginDef, err = configureFromMetadata(config, metadata, string(version))
+			if err != nil {
+				return fmt.Errorf("failed to configure from metadata: %w", err)
+			}
 		}
 	}
 
@@ -579,6 +705,7 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		config.Plugins = make(map[string]PluginDefinition)
 	}
 	config.Plugins[string(pluginID)] = pluginDef
+	_ = isNewInstall // May be used for future conditional logic
 
 	// Add config section for the plugin with defaults from manifest
 	if config.Config == nil {
