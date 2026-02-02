@@ -120,8 +120,8 @@ func (c *RegistryClient) SearchPlugins(query string, tags []string) ([]PluginMet
 	}
 
 	// Make an HTTP request to the registry API
-	url := fmt.Sprintf("%s/api/plugins?query=%s&tags=%s", c.options.RegistryURL, query, strings.Join(tags, ","))
-	resp, err := c.httpClient.Get(url)
+	reqURL := fmt.Sprintf("%s/api/plugins?query=%s&tags=%s", c.options.RegistryURL, url.QueryEscape(query), strings.Join(tags, ","))
+	resp, err := c.httpClient.Get(reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search plugins: %w", err)
 	}
@@ -132,13 +132,16 @@ func (c *RegistryClient) SearchPlugins(query string, tags []string) ([]PluginMet
 		return nil, fmt.Errorf("failed to read plugin metadata: %w", err)
 	}
 
-	var metadata []PluginMetadata
-	err = yaml.Unmarshal(body, &metadata)
+	// API returns {"data": [...]} so we need to unwrap
+	var response struct {
+		Data []PluginMetadata `json:"data"`
+	}
+	err = json.Unmarshal(body, &response)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal plugin metadata: %w", err)
 	}
 
-	return metadata, nil
+	return response.Data, nil
 }
 
 // DownloadPlugin downloads a plugin to the local cache

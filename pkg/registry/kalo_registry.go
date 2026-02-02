@@ -16,8 +16,11 @@ type PluginVersion string
 
 // PluginMetadata contains information about a specific plugin
 type PluginMetadata struct {
-	// Plugin identifier in the format @org/name
-	ID PluginIdentifier `json:"id"`
+	// ID is the database primary key (UUID)
+	ID string `json:"id,omitempty"`
+
+	// Name is the scoped identifier like @org/plugin-name (e.g. @kalo-build/plugin-morphe-db-manager)
+	Name PluginIdentifier `json:"name"`
 
 	// Version of the plugin
 	Version PluginVersion `json:"version"`
