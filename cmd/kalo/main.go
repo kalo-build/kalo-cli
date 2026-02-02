@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,49 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"gopkg.in/yaml.v3"
 )
+
+// expandEnvWithDefaults expands environment variables with bash-style default syntax.
+// Supports:
+//   - $VAR or ${VAR} - standard env var expansion
+//   - ${VAR:-default} - use default if VAR is unset or empty
+//   - ${VAR-default} - use default only if VAR is unset
+func expandEnvWithDefaults(s string) string {
+	// Pattern matches ${VAR:-default} or ${VAR-default}
+	// Group 1: variable name
+	// Group 2: :- or - (the separator)
+	// Group 3: default value
+	pattern := regexp.MustCompile(`\$\{([^}:]+)(:-|-)([^}]*)\}`)
+
+	result := pattern.ReplaceAllStringFunc(s, func(match string) string {
+		groups := pattern.FindStringSubmatch(match)
+		if len(groups) != 4 {
+			return match
+		}
+
+		varName := groups[1]
+		separator := groups[2]
+		defaultVal := groups[3]
+
+		envVal, exists := os.LookupEnv(varName)
+
+		if separator == ":-" {
+			// ${VAR:-default} - use default if unset OR empty
+			if !exists || envVal == "" {
+				return defaultVal
+			}
+			return envVal
+		} else {
+			// ${VAR-default} - use default only if unset
+			if !exists {
+				return defaultVal
+			}
+			return envVal
+		}
+	})
+
+	// Also expand regular ${VAR} and $VAR patterns
+	return os.ExpandEnv(result)
+}
 
 // KaloConfig represents the structure of kalo.yaml
 type KaloConfig struct {
@@ -406,7 +450,7 @@ func runTarget(target string) error {
 		if storePath == "" {
 			return fmt.Errorf("store %s: localFileSystem requires 'path' option", name)
 		}
-		storePath = os.ExpandEnv(storePath)
+		storePath = expandEnvWithDefaults(storePath)
 		log.Printf("Creating store directory for %s: %s", name, storePath)
 		if err := os.MkdirAll(storePath, 0755); err != nil {
 			return fmt.Errorf("failed to create store directory %s: %w", storePath, err)
@@ -1215,7 +1259,7 @@ func executePlugin(
 			if storePath == "" {
 				return fmt.Errorf("store '%s': localFileSystem requires 'path' option", storeName)
 			}
-			storePath = os.ExpandEnv(storePath)
+			storePath = expandEnvWithDefaults(storePath)
 			fsConfig = fsConfig.WithDirMount(storePath, mountPath)
 			log.Printf("Mounting store '%s' at '%s' (path: %s)", storeName, mountPath, storePath)
 
@@ -1228,7 +1272,7 @@ func executePlugin(
 		case StoreTypeGitRepository:
 			// Checkout files from git ref to a temp directory
 			repoRoot := store.GitRepoRoot()
-			gitRef := store.GitRef()
+			gitRef := expandEnvWithDefaults(store.GitRef())
 			subPath := store.GitSubPath()
 
 			log.Printf("Checking out git ref '%s' for store '%s'", gitRef, storeName)
@@ -1256,7 +1300,7 @@ func executePlugin(
 			if connString == "" {
 				return fmt.Errorf("store '%s': cloudSqlDatabase requires 'connection' option", storeName)
 			}
-			connString = os.ExpandEnv(connString)
+			connString = expandEnvWithDefaults(connString)
 			log.Printf("Connecting to database store '%s'", storeName)
 
 			pool, err := pgxpool.New(ctx, connString)
