@@ -182,6 +182,47 @@ To create a WASM plugin for Kalo CLI:
 GOOS=wasip1 GOARCH=wasm go build -o plugins/morphe-go-struct.wasm ./path/to/plugin
 ```
 
+## Releasing New Versions
+
+Releases are automated via GitHub Actions using [GoReleaser](https://goreleaser.com/). To create a new release:
+
+```bash
+# Create and push a version tag
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+This triggers the release workflow which:
+1. Builds binaries for Linux, macOS, and Windows (amd64/arm64)
+2. Creates a GitHub Release with the binaries
+3. Updates Homebrew tap and Scoop bucket formulas
+
+### Version Format
+
+Use [semantic versioning](https://semver.org/):
+- `v1.0.0` - Major release
+- `v1.1.0` - Minor release (new features)
+- `v1.1.1` - Patch release (bug fixes)
+
+### Prereleases
+
+Tags with prerelease suffixes are automatically marked as prereleases on GitHub:
+
+```bash
+# Prerelease examples
+git tag v1.0.0-alpha
+git tag v1.0.0-beta.1
+git tag v1.0.0-rc.1
+git tag v0.0.1-dev.123
+```
+
+Prereleases:
+- Are marked as "Pre-release" on GitHub Releases
+- Are **not** installed by the quick install scripts (which fetch "latest")
+- Are **not** pushed to Homebrew/Scoop (package managers only get stable releases)
+
+To test a prerelease manually, download from the [Releases page](https://github.com/kalo-build/kalo-cli/releases).
+
 ## Environment Variables
 
 Kalo CLI supports loading environment variables from a `.env` file, which can be useful for setting up paths and other configuration values.
