@@ -68,6 +68,25 @@ cd kalo-cli
 go build -o kalo ./cmd/kalo
 ```
 
+## Updating
+
+To upgrade Kalo CLI to the latest release, use the same command as your installation method:
+
+| Method | Update command |
+|--------|-----------------|
+| **Quick install** | Re-run the install script — it fetches the latest release |
+| **Go install** | `go install github.com/kalo-build/kalo-cli/cmd/kalo@latest` |
+| **Go install (specific version)** | `go install github.com/kalo-build/kalo-cli/cmd/kalo@v0.1.0` |
+| **Homebrew** | `brew upgrade kalo` |
+| **Scoop** | `scoop update kalo` |
+| **Manual** | Download the new binary from [GitHub Releases](https://github.com/kalo-build/kalo-cli/releases) and replace your existing binary |
+
+Verify the version:
+
+```bash
+kalo --version
+```
+
 ## Usage
 
 ```bash
