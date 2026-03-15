@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	kconfig "github.com/kalo-build/kalo-cli/pkg/config"
 	"github.com/kalo-build/kalo-cli/pkg/hostfuncs"
 	"github.com/kalo-build/kalo-cli/pkg/registry"
 	"github.com/spf13/cobra"
@@ -68,96 +69,6 @@ func expandEnvWithDefaults(s string) string {
 
 	// Also expand regular ${VAR} and $VAR patterns
 	return os.ExpandEnv(result)
-}
-
-// KaloConfig represents the structure of kalo.yaml
-type KaloConfig struct {
-	Stores    map[string]Store            `yaml:"stores"`
-	Config    map[string]interface{}      `yaml:"config"`
-	Pipelines map[string]Pipeline         `yaml:"pipelines"`
-	Plugins   map[string]PluginDefinition `yaml:"plugins"`
-}
-
-// StoreType constants
-const (
-	StoreTypeLocalFileSystem  = "localFileSystem"
-	StoreTypeGitRepository    = "gitRepository"
-	StoreTypeCloudSqlDatabase = "cloudSqlDatabase"
-)
-
-// Store represents a data store configuration.
-// The Type field determines which options are relevant.
-type Store struct {
-	Format  string         `yaml:"format"`
-	Type    string         `yaml:"type"` // localFileSystem, gitRepository, cloudSqlDatabase
-	Options map[string]any `yaml:"options,omitempty"`
-}
-
-// GetStringOption returns a string option value.
-func (s Store) GetStringOption(key string, defaultVal string) string {
-	if s.Options == nil {
-		return defaultVal
-	}
-	if v, ok := s.Options[key]; ok {
-		if str, ok := v.(string); ok {
-			return str
-		}
-	}
-	return defaultVal
-}
-
-// Path returns the path option for localFileSystem stores.
-func (s Store) Path() string {
-	return s.GetStringOption("path", "")
-}
-
-// Connection returns the connection option for cloudSqlDatabase stores.
-func (s Store) Connection() string {
-	return s.GetStringOption("connection", "")
-}
-
-// GitRepoRoot returns the repoRoot option for gitRepository stores.
-func (s Store) GitRepoRoot() string {
-	return s.GetStringOption("repoRoot", ".")
-}
-
-// GitRef returns the ref option for gitRepository stores.
-func (s Store) GitRef() string {
-	return s.GetStringOption("ref", "HEAD")
-}
-
-// GitSubPath returns the subPath option for gitRepository stores.
-func (s Store) GitSubPath() string {
-	return s.GetStringOption("subPath", "")
-}
-
-// Pipeline represents a pipeline configuration
-type Pipeline struct {
-	Description string  `yaml:"description,omitempty"` // Short description shown in 'kalo list'
-	Alias       string  `yaml:"alias,omitempty"`       // Optional short alias for the pipeline (e.g., "up" for "migrate-up")
-	Stages      []Stage `yaml:"stages"`
-}
-
-// Stage represents a stage in a pipeline
-type Stage struct {
-	Name   string                 `yaml:"name"`
-	Steps  []string               `yaml:"steps"`
-	Config map[string]interface{} `yaml:"config,omitempty"` // Per-stage config, merged with global plugin config
-}
-
-// PluginDefinition represents a plugin configuration
-type PluginDefinition struct {
-	Version string                  `yaml:"version"`
-	Input   *PluginIOSpec           `yaml:"input,omitempty"`
-	Inputs  map[string]PluginIOSpec `yaml:"inputs,omitempty"` // Multiple named inputs
-	Output  *PluginIOSpec           `yaml:"output,omitempty"`
-	Config  map[string]any          `yaml:"config,omitempty"`
-}
-
-// PluginIOSpec represents a plugin's input or output specification
-type PluginIOSpec struct {
-	Format string `yaml:"format"`
-	Store  string `yaml:"store"`
 }
 
 const (
@@ -317,42 +228,46 @@ func runInstall() error {
 	var downloadErrors []string
 	downloadCount := 0
 
-	for pluginID, pluginDef := range config.Plugins {
+	for alias, pluginDef := range config.Plugins {
+		pluginID := registry.PluginIdentifier(pluginDef.PluginIdentity(alias))
 		version := registry.PluginVersion(pluginDef.Version)
 
-		// Check if we have a locked version
+		// Check if we have a locked version (try alias first, then plugin ID)
 		if lockFile != nil {
-			if lockedPlugin, exists := lockFile.Plugins[registry.PluginIdentifier(pluginID)]; exists {
-				// Use locked version
+			lockedPlugin, exists := lockFile.Plugins[registry.PluginIdentifier(alias)]
+			if !exists {
+				lockedPlugin, exists = lockFile.Plugins[pluginID]
+			}
+			if exists {
 				version = lockedPlugin.Version
-
-				// Check if already downloaded
 				if _, err := os.Stat(lockedPlugin.Location); err == nil {
-					fmt.Printf("  %s@%s - already installed\n", pluginID, version)
+					fmt.Printf("  %s (%s@%s) - already installed\n", alias, pluginID, version)
 					continue
 				}
 			}
 		}
 
-		// Download the plugin
-		fmt.Printf("  %s@%s - downloading...\n", pluginID, version)
-		localPath, err := client.DownloadPlugin(registry.PluginIdentifier(pluginID), version)
+		fmt.Printf("  %s (%s@%s) - downloading...\n", alias, pluginID, version)
+		localPath, err := client.DownloadPlugin(pluginID, version)
 		if err != nil {
-			downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %v", pluginID, err))
+			downloadErrors = append(downloadErrors, fmt.Sprintf("%s (%s): %v", alias, pluginID, err))
 			continue
 		}
 
-		fmt.Printf("  %s@%s - installed to %s\n", pluginID, version, localPath)
+		fmt.Printf("  %s (%s@%s) - installed to %s\n", alias, pluginID, version, localPath)
 		downloadCount++
 	}
 
-	// Generate/update lockfile
-	pluginVersions := make(map[registry.PluginIdentifier]registry.PluginVersion)
-	for id, plugin := range config.Plugins {
-		pluginVersions[registry.PluginIdentifier(id)] = registry.PluginVersion(plugin.Version)
+	// Generate/update lockfile with alias-aware entries
+	pluginEntries := make(map[string]registry.PluginLockEntry)
+	for alias, p := range config.Plugins {
+		pluginEntries[alias] = registry.PluginLockEntry{
+			PluginID: registry.PluginIdentifier(p.PluginIdentity(alias)),
+			Version:  registry.PluginVersion(p.Version),
+		}
 	}
 
-	newLockFile, err := client.GenerateLockFile(KaloConfigFile, pluginVersions)
+	newLockFile, err := client.GenerateLockFileAliased(KaloConfigFile, pluginEntries)
 	if err != nil {
 		return fmt.Errorf("failed to generate lockfile: %w", err)
 	}
@@ -384,7 +299,7 @@ func listPipelines() error {
 		return fmt.Errorf("failed to read kalo.yaml: %w", err)
 	}
 
-	var config KaloConfig
+	var config kconfig.KaloConfig
 	if err := yaml.Unmarshal(configData, &config); err != nil {
 		return fmt.Errorf("failed to parse kalo.yaml: %w", err)
 	}
@@ -443,7 +358,7 @@ func runTarget(target string) error {
 
 	// Ensure all localFileSystem store directories exist
 	for name, store := range config.Stores {
-		if store.Type != StoreTypeLocalFileSystem {
+		if store.Type != kconfig.StoreTypeLocalFileSystem {
 			continue
 		}
 		storePath := store.Path()
@@ -478,69 +393,16 @@ func runTarget(target string) error {
 	return runPipeline(ctx, wasmRuntime, kaloHost, target, config, lockFile)
 }
 
-// runSinglePlugin runs a single plugin by name.
-func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pluginName string, config *KaloConfig, lockFile *registry.LockFile) error {
-	log.Printf("Running plugin: %s", pluginName)
-
-	pluginDef, exists := config.Plugins[pluginName]
-	if !exists {
-		return fmt.Errorf("plugin %s not found in kalo.yaml", pluginName)
-	}
-
-	pluginLock, exists := lockFile.Plugins[registry.PluginIdentifier(pluginName)]
-	if !exists {
-		return fmt.Errorf("plugin %s not found in kalo.lock", pluginName)
-	}
-
-	// Check if plugin file exists, if not attempt to download
-	pluginPath := pluginLock.Location
-	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
-		log.Printf("Plugin %s not found at %s, attempting download...", pluginName, pluginPath)
-		downloadedPath, downloadErr := downloadPluginFromRegistry(pluginName, string(pluginDef.Version))
-		if downloadErr != nil {
-			return fmt.Errorf("plugin file not found and download failed: %w", downloadErr)
-		}
-		pluginPath = downloadedPath
-	}
-
-	// Merge plugin-specific config from config section
-	if pluginConfig, ok := config.Config[pluginName]; ok {
-		if configMap, ok := pluginConfig.(map[string]any); ok {
-			if pluginDef.Config == nil {
-				pluginDef.Config = configMap
-			} else {
-				for k, v := range configMap {
-					pluginDef.Config[k] = v
-				}
-			}
-		}
-	}
-
-	return executePlugin(ctx, wasmRuntime, kaloHost, pluginPath, config.Stores, pluginDef)
-}
-
-// resolvePipeline looks up a pipeline by name or alias.
-// Returns (resolvedName, pipeline, found).
-func resolvePipeline(nameOrAlias string, pipelines map[string]Pipeline) (string, Pipeline, bool) {
-	// First, try direct name lookup
-	if pipeline, exists := pipelines[nameOrAlias]; exists {
-		return nameOrAlias, pipeline, true
-	}
-
-	// Then, try to find by alias
-	for name, pipeline := range pipelines {
-		if pipeline.Alias == nameOrAlias {
-			return name, pipeline, true
-		}
-	}
-
-	return "", Pipeline{}, false
+// runSinglePlugin runs a single plugin by name or alias.
+func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pluginName string, config *kconfig.KaloConfig, lockFile *registry.LockFile) error {
+	step := kconfig.StepSpec{Plugin: pluginName}
+	return runPluginStep(ctx, wasmRuntime, kaloHost, step, nil, config, lockFile)
 }
 
 // runPipeline runs all steps in a pipeline.
-func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pipelineName string, config *KaloConfig, lockFile *registry.LockFile) error {
+func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pipelineName string, config *kconfig.KaloConfig, lockFile *registry.LockFile) error {
 	// Resolve pipeline name (check direct name first, then aliases)
-	resolvedName, pipeline, exists := resolvePipeline(pipelineName, config.Pipelines)
+	resolvedName, pipeline, exists := kconfig.ResolvePipeline(pipelineName, config.Pipelines)
 	if !exists {
 		return fmt.Errorf("pipeline '%s' not found in kalo.yaml (checked name and aliases)", pipelineName)
 	}
@@ -555,13 +417,8 @@ func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *host
 		log.Printf("Running stage: %s", stage.Name)
 
 		for _, step := range stage.Steps {
-			if !strings.HasPrefix(step, "plugin: ") {
-				return fmt.Errorf("invalid step format: %s (expected 'plugin: @org/name')", step)
-			}
-			pluginName := strings.TrimPrefix(step, "plugin: ")
-
-			if err := runPluginWithStageConfig(ctx, wasmRuntime, kaloHost, pluginName, stage.Config, config, lockFile); err != nil {
-				return fmt.Errorf("plugin %s failed: %w", pluginName, err)
+			if err := runPluginStep(ctx, wasmRuntime, kaloHost, step, stage.Config, config, lockFile); err != nil {
+				return fmt.Errorf("plugin %s failed: %w", step.Plugin, err)
 			}
 		}
 	}
@@ -569,62 +426,45 @@ func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *host
 	return nil
 }
 
-// runPluginWithStageConfig runs a plugin with per-stage config merged with global config.
-func runPluginWithStageConfig(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pluginName string, stageConfig map[string]interface{}, config *KaloConfig, lockFile *registry.LockFile) error {
-	log.Printf("Running plugin: %s", pluginName)
+// runPluginStep resolves a step's alias, applies overrides, merges config, and executes.
+func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, step kconfig.StepSpec, stageConfig map[string]interface{}, config *kconfig.KaloConfig, lockFile *registry.LockFile) error {
+	aliasOrName := step.Plugin
+	log.Printf("Running plugin: %s", aliasOrName)
 
-	pluginDef, exists := config.Plugins[pluginName]
+	pluginDef, pluginID, exists := kconfig.ResolvePlugin(aliasOrName, config.Plugins)
 	if !exists {
-		return fmt.Errorf("plugin %s not found in kalo.yaml", pluginName)
+		return fmt.Errorf("plugin %s not found in kalo.yaml", aliasOrName)
 	}
 
-	pluginLock, exists := lockFile.Plugins[registry.PluginIdentifier(pluginName)]
+	// Look up in lock file by alias key first, then by plugin identity
+	pluginLock, exists := lockFile.Plugins[registry.PluginIdentifier(aliasOrName)]
 	if !exists {
-		return fmt.Errorf("plugin %s not found in kalo.lock", pluginName)
+		pluginLock, exists = lockFile.Plugins[registry.PluginIdentifier(pluginID)]
+		if !exists {
+			return fmt.Errorf("plugin %s (identity: %s) not found in kalo.lock", aliasOrName, pluginID)
+		}
 	}
 
 	// Check if plugin file exists, if not attempt to download
 	pluginPath := pluginLock.Location
 	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
-		log.Printf("Plugin %s not found at %s, attempting download...", pluginName, pluginPath)
-		downloadedPath, downloadErr := downloadPluginFromRegistry(pluginName, string(pluginDef.Version))
+		log.Printf("Plugin %s not found at %s, attempting download...", pluginID, pluginPath)
+		downloadedPath, downloadErr := downloadPluginFromRegistry(pluginID, string(pluginDef.Version))
 		if downloadErr != nil {
 			return fmt.Errorf("plugin file not found and download failed: %w", downloadErr)
 		}
 		pluginPath = downloadedPath
 	}
 
-	// Start with a copy of the plugin definition's config
-	mergedConfig := make(map[string]interface{})
+	// Apply step-level I/O overrides
+	effectiveDef := kconfig.ApplyStepOverrides(pluginDef, step)
 
-	// 1. First, merge plugin-specific config from global config section
-	if pluginConfig, ok := config.Config[pluginName]; ok {
-		if configMap, ok := pluginConfig.(map[string]any); ok {
-			for k, v := range configMap {
-				mergedConfig[k] = v
-			}
-		}
-	}
+	mergedConfig := kconfig.MergeConfig(config, aliasOrName, pluginID, effectiveDef.Config, stageConfig, step.Config)
 
-	// 2. Then, merge plugin definition's config
-	if pluginDef.Config != nil {
-		for k, v := range pluginDef.Config {
-			mergedConfig[k] = v
-		}
-	}
+	execDef := effectiveDef
+	execDef.Config = mergedConfig
 
-	// 3. Finally, merge stage-specific config (highest priority)
-	if stageConfig != nil {
-		for k, v := range stageConfig {
-			mergedConfig[k] = v
-		}
-	}
-
-	// Create a copy of pluginDef with merged config
-	pluginDefWithConfig := pluginDef
-	pluginDefWithConfig.Config = mergedConfig
-
-	return executePlugin(ctx, wasmRuntime, kaloHost, pluginPath, config.Stores, pluginDefWithConfig)
+	return executePlugin(ctx, wasmRuntime, kaloHost, pluginPath, config.Stores, execDef)
 }
 
 func pluginCommand() *cobra.Command {
@@ -640,6 +480,7 @@ func pluginCommand() *cobra.Command {
 }
 
 func pluginInstallCommand() *cobra.Command {
+	var aliasFlag string
 	cmd := &cobra.Command{
 		Use:   "install [plugin-id[@version]]",
 		Short: "Install a Kalo plugin",
@@ -647,16 +488,22 @@ func pluginInstallCommand() *cobra.Command {
 The plugin will be downloaded and added to the kalo.yaml manifest.
 If no version is specified, the latest version will be used.
 
+Use --as to specify a custom alias for the plugin instance.
+
 Example:
-  kalo plugin install @kalo-build/plugin-morphe-psql-types@v1.0.0`,
+  kalo plugin install @kalo-build/plugin-morphe-psql-types@v1.0.0
+  kalo plugin install @kalo-build/plugin-morphe-ts-types@v1.0.0 --as ts-types-ext`,
 		Args: cobra.ExactArgs(1),
-		RunE: runPluginInstall,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPluginInstall(cmd, args, aliasFlag)
+		},
 	}
+	cmd.Flags().StringVar(&aliasFlag, "as", "", "Custom alias for the plugin instance")
 
 	return cmd
 }
 
-func runPluginInstall(cmd *cobra.Command, args []string) error {
+func runPluginInstall(cmd *cobra.Command, args []string, aliasFlag string) error {
 	// Parse plugin ID and version
 	pluginID, version, err := parsePluginArg(args[0])
 	if err != nil {
@@ -694,43 +541,56 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 	manifest, err := client.GetPluginManifest(pluginID, version)
 	if err != nil {
 		log.Printf("Warning: Could not fetch plugin manifest: %v", err)
-		// Continue without manifest
 	}
 
 	// Load existing kalo.yaml or create a new one
 	config, err := readKaloConfig()
 	if err != nil {
-		// Create a new config if kalo.yaml doesn't exist
 		if os.IsNotExist(err) || strings.Contains(err.Error(), "cannot find the file") {
 			fmt.Println("Creating new kalo.yaml...")
-			config = &KaloConfig{
-				Stores:    make(map[string]Store),
+			config = &kconfig.KaloConfig{
+				Stores:    make(map[string]kconfig.Store),
 				Config:    make(map[string]interface{}),
-				Pipelines: make(map[string]Pipeline),
-				Plugins:   make(map[string]PluginDefinition),
+				Pipelines: make(map[string]kconfig.Pipeline),
+				Plugins:   make(map[string]kconfig.PluginDefinition),
 			}
 		} else {
 			return fmt.Errorf("failed to load kalo.yaml: %w", err)
 		}
 	}
 
-	// Check if plugin is already installed
-	var pluginDef PluginDefinition
-	var isNewInstall bool
-	if existingPlugin, exists := config.Plugins[string(pluginID)]; exists {
+	// Determine the alias key for this plugin instance
+	alias := aliasFlag
+	if alias == "" {
+		alias = kconfig.PluginIDToAlias(string(pluginID))
+	}
+
+	// Check if plugin is already installed (by alias or by plugin identity)
+	var pluginDef kconfig.PluginDefinition
+	var existingAlias string
+	if existingPlugin, exists := config.Plugins[alias]; exists {
+		existingAlias = alias
 		if existingPlugin.Version == string(version) {
-			fmt.Printf("Plugin %s@%s is already installed.\n", pluginID, version)
+			fmt.Printf("Plugin %s@%s is already installed as '%s'.\n", pluginID, version, alias)
 			fmt.Println("Nothing to do.")
 			return nil
 		}
-		// Update existing plugin - only change the version, preserve existing config
-		fmt.Printf("Updating %s from %s to %s...\n", pluginID, existingPlugin.Version, version)
+		fmt.Printf("Updating %s (%s) from %s to %s...\n", alias, pluginID, existingPlugin.Version, version)
 		pluginDef = existingPlugin
 		pluginDef.Version = string(version)
-		isNewInstall = false
+	} else if foundAlias, existingPlugin, found := kconfig.FindPluginByIdentity(config.Plugins, string(pluginID)); found {
+		existingAlias = foundAlias
+		if existingPlugin.Version == string(version) {
+			fmt.Printf("Plugin %s@%s is already installed as '%s'.\n", pluginID, version, foundAlias)
+			fmt.Println("Nothing to do.")
+			return nil
+		}
+		fmt.Printf("Updating %s (%s) from %s to %s...\n", foundAlias, pluginID, existingPlugin.Version, version)
+		alias = foundAlias
+		pluginDef = existingPlugin
+		pluginDef.Version = string(version)
 	} else {
-		// New install - configure stores and plugin definition based on manifest
-		isNewInstall = true
+		// New install
 		if manifest != nil {
 			pluginDef, err = configureFromManifest(config, manifest, string(version))
 			if err != nil {
@@ -742,40 +602,37 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("failed to configure from metadata: %w", err)
 			}
 		}
+		pluginDef.Plugin = string(pluginID)
+	}
+	_ = existingAlias
+
+	// Colocate config defaults from manifest into the plugin instance
+	if pluginDef.Config == nil {
+		pluginDef.Config = make(map[string]any)
+	}
+	if manifest != nil && manifest.ConfigSchema != nil {
+		for key, option := range manifest.ConfigSchema {
+			if option.Default != nil {
+				if _, exists := pluginDef.Config[key]; !exists {
+					pluginDef.Config[key] = option.Default
+				}
+			}
+		}
 	}
 
 	// Add plugin to config
 	if config.Plugins == nil {
-		config.Plugins = make(map[string]PluginDefinition)
+		config.Plugins = make(map[string]kconfig.PluginDefinition)
 	}
-	config.Plugins[string(pluginID)] = pluginDef
-	_ = isNewInstall // May be used for future conditional logic
-
-	// Add config section for the plugin with defaults from manifest
-	if config.Config == nil {
-		config.Config = make(map[string]interface{})
-	}
-	if _, exists := config.Config[string(pluginID)]; !exists {
-		pluginConfig := make(map[string]interface{})
-		// Populate with default values from manifest's configSchema
-		if manifest != nil && manifest.ConfigSchema != nil {
-			for key, option := range manifest.ConfigSchema {
-				if option.Default != nil {
-					pluginConfig[key] = option.Default
-				}
-			}
-		}
-		config.Config[string(pluginID)] = pluginConfig
-	}
+	config.Plugins[alias] = pluginDef
 
 	// Create a default pipeline if none exist
 	if config.Pipelines == nil {
-		config.Pipelines = make(map[string]Pipeline)
+		config.Pipelines = make(map[string]kconfig.Pipeline)
 	}
 	if len(config.Pipelines) == 0 {
 		pipelineName := "compile"
 		if manifest != nil && manifest.Modes != nil {
-			// For plugins with modes, use the default mode name
 			for name, mode := range manifest.Modes {
 				if mode.IsDefault {
 					pipelineName = name
@@ -784,12 +641,12 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		config.Pipelines[pipelineName] = Pipeline{
+		config.Pipelines[pipelineName] = kconfig.Pipeline{
 			Description: fmt.Sprintf("Run %s", pluginID),
-			Stages: []Stage{
+			Stages: []kconfig.Stage{
 				{
 					Name:  pipelineName,
-					Steps: []string{fmt.Sprintf("plugin: %s", pluginID)},
+					Steps: []kconfig.StepSpec{{Plugin: alias}},
 				},
 			},
 		}
@@ -808,13 +665,16 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to download plugin: %w", err)
 	}
 
-	// Generate/update lockfile
-	pluginVersions := make(map[registry.PluginIdentifier]registry.PluginVersion)
-	for id, plugin := range config.Plugins {
-		pluginVersions[registry.PluginIdentifier(id)] = registry.PluginVersion(plugin.Version)
+	// Generate/update lockfile with alias-aware entries
+	pluginEntries := make(map[string]registry.PluginLockEntry)
+	for a, p := range config.Plugins {
+		pluginEntries[a] = registry.PluginLockEntry{
+			PluginID: registry.PluginIdentifier(p.PluginIdentity(a)),
+			Version:  registry.PluginVersion(p.Version),
+		}
 	}
 
-	lockFile, err := client.GenerateLockFile(KaloConfigFile, pluginVersions)
+	lockFile, err := client.GenerateLockFileAliased(KaloConfigFile, pluginEntries)
 	if err != nil {
 		return fmt.Errorf("failed to generate lockfile: %w", err)
 	}
@@ -824,13 +684,13 @@ func runPluginInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save lockfile: %w", err)
 	}
 
-	fmt.Printf("Successfully installed %s@%s to %s\n", pluginID, version, localPath)
+	fmt.Printf("Successfully installed %s@%s as '%s' to %s\n", pluginID, version, alias, localPath)
 	return nil
 }
 
 // configureFromManifest creates stores and plugin definition based on manifest
-func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest, version string) (PluginDefinition, error) {
-	pluginDef := PluginDefinition{
+func configureFromManifest(config *kconfig.KaloConfig, manifest *registry.PluginManifest, version string) (kconfig.PluginDefinition, error) {
+	pluginDef := kconfig.PluginDefinition{
 		Version: version,
 	}
 
@@ -848,7 +708,7 @@ func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest
 
 		// Add store if it doesn't exist
 		if _, exists := config.Stores[storeName]; !exists {
-			store := Store{
+			store := kconfig.Store{
 				Format:  spec.Format,
 				Type:    spec.SuggestedStore.Type,
 				Options: make(map[string]any),
@@ -856,22 +716,22 @@ func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest
 
 			// Set default type if not specified
 			if store.Type == "" {
-				store.Type = StoreTypeLocalFileSystem
+				store.Type = kconfig.StoreTypeLocalFileSystem
 			}
 
 			// Configure based on store type
 			switch store.Type {
-			case StoreTypeLocalFileSystem:
+			case kconfig.StoreTypeLocalFileSystem:
 				path := spec.SuggestedStore.Path
 				if path == "" {
 					path = "./" + strings.ToLower(storeName)
 				}
 				store.Options["path"] = path
-			case StoreTypeGitRepository:
+			case kconfig.StoreTypeGitRepository:
 				store.Options["repoRoot"] = spec.SuggestedStore.RepoRoot
 				store.Options["ref"] = spec.SuggestedStore.Ref
 				store.Options["subPath"] = spec.SuggestedStore.SubPath
-			case StoreTypeCloudSqlDatabase:
+			case kconfig.StoreTypeCloudSqlDatabase:
 				conn := spec.SuggestedStore.Connection
 				if conn == "" {
 					conn = "$DATABASE_URL"
@@ -892,7 +752,7 @@ func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest
 		if err != nil {
 			return pluginDef, err
 		}
-		pluginDef.Input = &PluginIOSpec{
+		pluginDef.Input = &kconfig.PluginIOSpec{
 			Format: manifest.Input.Format,
 			Store:  storeName,
 		}
@@ -900,13 +760,13 @@ func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest
 
 	// Handle multiple inputs
 	if manifest.Inputs != nil {
-		pluginDef.Inputs = make(map[string]PluginIOSpec)
+		pluginDef.Inputs = make(map[string]kconfig.PluginIOSpec)
 		for name, spec := range manifest.Inputs {
 			storeName, err := addStore(spec)
 			if err != nil {
 				return pluginDef, err
 			}
-			pluginDef.Inputs[name] = PluginIOSpec{
+			pluginDef.Inputs[name] = kconfig.PluginIOSpec{
 				Format: spec.Format,
 				Store:  storeName,
 			}
@@ -919,7 +779,7 @@ func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest
 		if err != nil {
 			return pluginDef, err
 		}
-		pluginDef.Output = &PluginIOSpec{
+		pluginDef.Output = &kconfig.PluginIOSpec{
 			Format: manifest.Output.Format,
 			Store:  storeName,
 		}
@@ -929,16 +789,16 @@ func configureFromManifest(config *KaloConfig, manifest *registry.PluginManifest
 }
 
 // configureFromMetadata creates stores and plugin definition based on legacy metadata
-func configureFromMetadata(config *KaloConfig, metadata *registry.PluginMetadata, version string) (PluginDefinition, error) {
+func configureFromMetadata(config *kconfig.KaloConfig, metadata *registry.PluginMetadata, version string) (kconfig.PluginDefinition, error) {
 	// Generate store names from format specs
 	inputStoreName := formatToStoreName(metadata.InputSpec)
 	outputStoreName := formatToStoreName(metadata.OutputSpec)
 
 	// Add input store if it doesn't exist
 	if _, exists := config.Stores[inputStoreName]; !exists && metadata.InputSpec != "" {
-		config.Stores[inputStoreName] = Store{
+		config.Stores[inputStoreName] = kconfig.Store{
 			Format: metadata.InputSpec,
-			Type:   StoreTypeLocalFileSystem,
+			Type:   kconfig.StoreTypeLocalFileSystem,
 			Options: map[string]any{
 				"path": "$" + inputStoreName + "_PATH",
 			},
@@ -949,9 +809,9 @@ func configureFromMetadata(config *KaloConfig, metadata *registry.PluginMetadata
 	// Add output store if it doesn't exist and differs from input
 	if outputStoreName != inputStoreName && metadata.OutputSpec != "" {
 		if _, exists := config.Stores[outputStoreName]; !exists {
-			config.Stores[outputStoreName] = Store{
+			config.Stores[outputStoreName] = kconfig.Store{
 				Format: metadata.OutputSpec,
-				Type:   StoreTypeLocalFileSystem,
+				Type:   kconfig.StoreTypeLocalFileSystem,
 				Options: map[string]any{
 					"path": "$" + outputStoreName + "_PATH",
 				},
@@ -960,13 +820,13 @@ func configureFromMetadata(config *KaloConfig, metadata *registry.PluginMetadata
 		}
 	}
 
-	return PluginDefinition{
+	return kconfig.PluginDefinition{
 		Version: version,
-		Input: &PluginIOSpec{
+		Input: &kconfig.PluginIOSpec{
 			Format: metadata.InputSpec,
 			Store:  inputStoreName,
 		},
-		Output: &PluginIOSpec{
+		Output: &kconfig.PluginIOSpec{
 			Format: metadata.OutputSpec,
 			Store:  outputStoreName,
 		},
@@ -1111,7 +971,7 @@ func formatToStoreName(format string) string {
 	return result
 }
 
-func saveKaloConfig(path string, config *KaloConfig) error {
+func saveKaloConfig(path string, config *kconfig.KaloConfig) error {
 	// Marshal each section separately and join with blank lines for readability
 	var sections []string
 
@@ -1153,14 +1013,14 @@ func saveKaloConfig(path string, config *KaloConfig) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
-func readKaloConfig() (*KaloConfig, error) {
+func readKaloConfig() (*kconfig.KaloConfig, error) {
 	data, err := os.ReadFile(KaloConfigFile)
 	if err != nil {
 		// Return the raw error for proper file-not-found detection
 		return nil, err
 	}
 
-	var config KaloConfig
+	var config kconfig.KaloConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse kalo.yaml: %w", err)
 	}
@@ -1220,8 +1080,8 @@ func executePlugin(
 	wasmRuntime wazero.Runtime,
 	kaloHost *hostfuncs.KaloHost,
 	pluginPath string,
-	stores map[string]Store,
-	pluginDef PluginDefinition,
+	stores map[string]kconfig.Store,
+	pluginDef kconfig.PluginDefinition,
 ) error {
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
@@ -1254,7 +1114,7 @@ func executePlugin(
 		nextStoreID++
 
 		switch store.Type {
-		case StoreTypeLocalFileSystem:
+		case kconfig.StoreTypeLocalFileSystem:
 			storePath := store.Path()
 			if storePath == "" {
 				return fmt.Errorf("store '%s': localFileSystem requires 'path' option", storeName)
@@ -1265,11 +1125,11 @@ func executePlugin(
 
 			storeConfigs[storeName] = StoreConfig{
 				ID:        storeID,
-				Type:      StoreTypeLocalFileSystem,
+				Type:      kconfig.StoreTypeLocalFileSystem,
 				MountPath: mountPath,
 			}
 
-		case StoreTypeGitRepository:
+		case kconfig.StoreTypeGitRepository:
 			// Checkout files from git ref to a temp directory
 			repoRoot := store.GitRepoRoot()
 			gitRef := expandEnvWithDefaults(store.GitRef())
@@ -1288,14 +1148,14 @@ func executePlugin(
 
 			storeConfigs[storeName] = StoreConfig{
 				ID:           storeID,
-				Type:         StoreTypeGitRepository,
+				Type:         kconfig.StoreTypeGitRepository,
 				MountPath:    mountPath,
 				GitRef:       gitRef,
 				GitCommit:    checkoutResult.CommitHash,
 				GitTimestamp: checkoutResult.CommitTime,
 			}
 
-		case StoreTypeCloudSqlDatabase:
+		case kconfig.StoreTypeCloudSqlDatabase:
 			connString := store.Connection()
 			if connString == "" {
 				return fmt.Errorf("store '%s': cloudSqlDatabase requires 'connection' option", storeName)
@@ -1313,7 +1173,7 @@ func executePlugin(
 
 			storeConfigs[storeName] = StoreConfig{
 				ID:   storeID,
-				Type: StoreTypeCloudSqlDatabase,
+				Type: kconfig.StoreTypeCloudSqlDatabase,
 			}
 
 		default:

@@ -369,6 +369,56 @@ func (c *RegistryClient) GenerateLockFile(configPath string, pluginVersions map[
 	return lockFile, nil
 }
 
+// GenerateLockFileAliased generates a lockfile from alias-keyed plugin entries.
+// Each entry maps an alias to a plugin identity + version.
+// Entries sharing the same plugin+version will reference the same WASM file.
+func (c *RegistryClient) GenerateLockFileAliased(configPath string, entries map[string]PluginLockEntry) (*LockFile, error) {
+	lockFile := &LockFile{
+		GeneratedAt: time.Now(),
+		Plugins:     make(map[PluginIdentifier]PluginLockInfo),
+	}
+
+	// Track downloads to avoid redundant fetches for same plugin+version
+	type downloadResult struct {
+		path string
+		hash string
+	}
+	downloaded := make(map[string]downloadResult)
+
+	for alias, entry := range entries {
+		cacheKey := string(entry.PluginID) + "@" + string(entry.Version)
+
+		result, ok := downloaded[cacheKey]
+		if !ok {
+			localPath, err := c.DownloadPlugin(entry.PluginID, entry.Version)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download plugin %s@%s (alias %s): %w", entry.PluginID, entry.Version, alias, err)
+			}
+			hash, err := CalculateSHA256(localPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to calculate hash for plugin %s: %w", entry.PluginID, err)
+			}
+			result = downloadResult{path: localPath, hash: hash}
+			downloaded[cacheKey] = result
+		}
+
+		lockInfo := PluginLockInfo{
+			Version:      entry.Version,
+			ResolvedHash: result.hash,
+			Location:     result.path,
+			DownloadedAt: time.Now(),
+		}
+		// Only set Plugin field when alias differs from plugin ID
+		if alias != string(entry.PluginID) {
+			lockInfo.Plugin = string(entry.PluginID)
+		}
+
+		lockFile.Plugins[PluginIdentifier(alias)] = lockInfo
+	}
+
+	return lockFile, nil
+}
+
 // SaveLockFile saves the lockfile to disk
 func (c *RegistryClient) SaveLockFile(lockFile *LockFile, filePath string) error {
 	data, err := yaml.Marshal(lockFile)

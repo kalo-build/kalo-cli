@@ -23,6 +23,28 @@ PLUGINS=(
     "plugin-morphe-go-struct:morphe-go-struct:v1.0.0"
     "plugin-morphe-ts-types:morphe-ts-types:v1.0.0"
     "plugin-morphe-zod-types:morphe-zod-types:v1.0.0"
+    "plugin-morphe-morpherepo:morphe-morpherepo:v1.0.0"
+    "plugin-morpherepo-go:morpherepo-go:v1.0.0"
+    "plugin-morpherepo-go-psql:morpherepo-go-psql:v1.0.0"
+    "plugin-morphe-crud-go-gin:morphe-crud-go-gin:v1.0.0"
+    "plugin-morphe-morphemap:morphe-morphemap:v1.0.0"
+    "plugin-morphemap-go:morphemap-go:v1.0.0"
+    "plugin-morphemap-ts:morphemap-ts:v1.0.0"
+    "plugin-morphe-ts-zod-bridge:morphe-ts-zod-bridge:v1.0.0"
+    "plugin-morpherepo-go-gin:morpherepo-go-gin:v1.0.0"
+    "plugin-morpherepo-openapi:morpherepo-openapi:v1.0.0"
+    "plugin-openapi-docs:openapi-docs:v1.0.0"
+    "plugin-openapi-sdk-go:openapi-sdk-go:v1.0.0"
+    "plugin-openapi-validator:openapi-validator:v1.0.0"
+    "plugin-psql-morphe:psql-morphe:v1.0.0"
+    # Eval plugins
+    "plugin-morphe-ai-context:morphe-ai-context:v1.0.0"
+    "plugin-openapi-ai-context:openapi-ai-context:v1.0.0"
+    "plugin-morphe-seed-data:morphe-seed-data:v1.0.0"
+    "plugin-openapi-go-gin-mock:openapi-go-gin-mock:v1.0.0"
+    "plugin-openapi-sdk-ts:openapi-sdk-ts:v1.0.0"
+    "plugin-openapi-morphe:openapi-morphe:v1.0.0"
+    "plugin-morphe-crud-react-shadcdn:morphe-crud-react-shadcdn:v1.0.0"
 )
 
 build_plugin() {

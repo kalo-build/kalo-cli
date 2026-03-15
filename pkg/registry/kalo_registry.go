@@ -128,8 +128,12 @@ type ManifestConfigOption struct {
 	Description string `yaml:"description,omitempty"`
 }
 
-// PluginLockInfo represents a plugin entry in the lockfile
+// PluginLockInfo represents a plugin entry in the lockfile.
+// When Plugin is set, the map key is an alias; when empty, the key is the plugin identity.
 type PluginLockInfo struct {
+	// Plugin is the actual plugin identifier (set when the key is an alias)
+	Plugin string `yaml:"plugin,omitempty"`
+
 	// Version of the plugin
 	Version PluginVersion `yaml:"version"`
 
@@ -143,13 +147,27 @@ type PluginLockInfo struct {
 	DownloadedAt time.Time `yaml:"downloadedAt"`
 }
 
+// PluginIdentity returns the actual plugin identifier (Plugin field if set, otherwise the key).
+func (p PluginLockInfo) PluginIdentity(key PluginIdentifier) PluginIdentifier {
+	if p.Plugin != "" {
+		return PluginIdentifier(p.Plugin)
+	}
+	return key
+}
+
 // LockFile represents the kalo.lock file structure
 type LockFile struct {
 	// GeneratedAt timestamp when the lockfile was generated
 	GeneratedAt time.Time `yaml:"generatedAt"`
 
-	// Plugins indexed by their identifier
+	// Plugins indexed by alias key (new format) or plugin identifier (legacy format)
 	Plugins map[PluginIdentifier]PluginLockInfo `yaml:"plugins"`
+}
+
+// PluginLockEntry is used by callers to pass alias-to-plugin mapping when generating lock files.
+type PluginLockEntry struct {
+	PluginID PluginIdentifier
+	Version  PluginVersion
 }
 
 // Registry defines the interface for interacting with the Kalo plugin registry
