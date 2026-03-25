@@ -42,6 +42,23 @@ func TestCalculateSHA256_NoFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to read file")
 }
 
+func TestNormalizeLockFilePaths(t *testing.T) {
+	lf := &LockFile{
+		Plugins: map[PluginIdentifier]PluginLockInfo{
+			"@kalo-build/foo": {
+				Location: `.kalo\plugins\kalo-build-plugin-foo-v1.0.0.wasm`,
+			},
+		},
+	}
+	NormalizeLockFilePaths(lf)
+	assert.Equal(t, ".kalo/plugins/kalo-build-plugin-foo-v1.0.0.wasm", lf.Plugins["@kalo-build/foo"].Location)
+}
+
+func TestNormalizeLockFilePaths_nil(t *testing.T) {
+	NormalizeLockFilePaths(nil)
+	NormalizeLockFilePaths(&LockFile{})
+}
+
 func TestLockFile_YAML(t *testing.T) {
 	lf := LockFile{
 		GeneratedAt: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC),

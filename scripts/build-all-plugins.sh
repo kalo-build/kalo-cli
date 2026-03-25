@@ -43,8 +43,16 @@ PLUGINS=(
     "plugin-morphe-seed-data:morphe-seed-data:v1.0.0"
     "plugin-openapi-go-gin-mock:openapi-go-gin-mock:v1.0.0"
     "plugin-openapi-sdk-ts:openapi-sdk-ts:v1.0.0"
+    "plugin-openapi-uibindings:openapi-uibindings:v1.0.0"
     "plugin-openapi-morphe:openapi-morphe:v1.0.0"
     "plugin-morphe-crud-react-shadcdn:morphe-crud-react-shadcdn:v1.0.0"
+    # Validation plugins
+    "plugin-httpcheck-go:httpcheck-go:v1.0.0"
+    "plugin-uicheck-playwright:uicheck-playwright:v1.0.0"
+    "plugin-datacheck-go:datacheck-go:v1.0.0"
+    "plugin-psql-csv-export:psql-csv-export:v1.0.0"
+    "plugin-uipage-react-shadcn:uipage-react-shadcn:v1.0.0"
+    "plugin-morphe-uispec:morphe-uispec:v1.0.0"
 )
 
 build_plugin() {

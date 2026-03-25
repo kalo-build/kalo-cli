@@ -419,8 +419,21 @@ func (c *RegistryClient) GenerateLockFileAliased(configPath string, entries map[
 	return lockFile, nil
 }
 
+// NormalizeLockFilePaths converts each plugin location to forward slashes so kalo.lock is
+// portable across Windows and Unix when committed to version control.
+func NormalizeLockFilePaths(lockFile *LockFile) {
+	if lockFile == nil || lockFile.Plugins == nil {
+		return
+	}
+	for id, info := range lockFile.Plugins {
+		info.Location = filepath.ToSlash(info.Location)
+		lockFile.Plugins[id] = info
+	}
+}
+
 // SaveLockFile saves the lockfile to disk
 func (c *RegistryClient) SaveLockFile(lockFile *LockFile, filePath string) error {
+	NormalizeLockFilePaths(lockFile)
 	data, err := yaml.Marshal(lockFile)
 	if err != nil {
 		return fmt.Errorf("failed to marshal lockfile: %w", err)
@@ -450,6 +463,7 @@ func (c *RegistryClient) LoadLockFile(filePath string) (*LockFile, error) {
 		return nil, fmt.Errorf("failed to parse lockfile: %w", err)
 	}
 
+	NormalizeLockFilePaths(lockFile)
 	return lockFile, nil
 }
 

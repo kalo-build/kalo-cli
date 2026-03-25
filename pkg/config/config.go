@@ -234,7 +234,7 @@ func FindPluginByIdentity(plugins map[string]PluginDefinition, pluginID string) 
 func MergeConfig(cfg *KaloConfig, aliasOrName, pluginID string, instanceConfig, stageConfig map[string]interface{}, stepConfig map[string]any) map[string]interface{} {
 	merged := make(map[string]interface{})
 
-	for _, key := range []string{aliasOrName, pluginID} {
+	for _, key := range []string{pluginID, aliasOrName} {
 		if pluginConfig, ok := cfg.Config[key]; ok {
 			if configMap, ok := pluginConfig.(map[string]any); ok {
 				for k, v := range configMap {

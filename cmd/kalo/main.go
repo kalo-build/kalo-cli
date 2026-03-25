@@ -503,6 +503,27 @@ Example:
 	return cmd
 }
 
+// reconcileKaloLockFile writes kalo.lock from the current kalo.yaml plugin list (alias-aware).
+// Call after plugin install or when skipping work because the plugin is already present, so a
+// missing or outdated lockfile is still created/updated.
+func reconcileKaloLockFile(client *registry.RegistryClient, config *kconfig.KaloConfig) error {
+	pluginEntries := make(map[string]registry.PluginLockEntry)
+	for a, p := range config.Plugins {
+		pluginEntries[a] = registry.PluginLockEntry{
+			PluginID: registry.PluginIdentifier(p.PluginIdentity(a)),
+			Version:  registry.PluginVersion(p.Version),
+		}
+	}
+	lockFile, err := client.GenerateLockFileAliased(KaloConfigFile, pluginEntries)
+	if err != nil {
+		return fmt.Errorf("failed to generate lockfile: %w", err)
+	}
+	if err := client.SaveLockFile(lockFile, KaloLockFile); err != nil {
+		return fmt.Errorf("failed to save lockfile: %w", err)
+	}
+	return nil
+}
+
 func runPluginInstall(cmd *cobra.Command, args []string, aliasFlag string) error {
 	// Parse plugin ID and version
 	pluginID, version, err := parsePluginArg(args[0])
@@ -573,7 +594,7 @@ func runPluginInstall(cmd *cobra.Command, args []string, aliasFlag string) error
 		if existingPlugin.Version == string(version) {
 			fmt.Printf("Plugin %s@%s is already installed as '%s'.\n", pluginID, version, alias)
 			fmt.Println("Nothing to do.")
-			return nil
+			return reconcileKaloLockFile(client, config)
 		}
 		fmt.Printf("Updating %s (%s) from %s to %s...\n", alias, pluginID, existingPlugin.Version, version)
 		pluginDef = existingPlugin
@@ -583,7 +604,7 @@ func runPluginInstall(cmd *cobra.Command, args []string, aliasFlag string) error
 		if existingPlugin.Version == string(version) {
 			fmt.Printf("Plugin %s@%s is already installed as '%s'.\n", pluginID, version, foundAlias)
 			fmt.Println("Nothing to do.")
-			return nil
+			return reconcileKaloLockFile(client, config)
 		}
 		fmt.Printf("Updating %s (%s) from %s to %s...\n", foundAlias, pluginID, existingPlugin.Version, version)
 		alias = foundAlias
@@ -665,23 +686,8 @@ func runPluginInstall(cmd *cobra.Command, args []string, aliasFlag string) error
 		return fmt.Errorf("failed to download plugin: %w", err)
 	}
 
-	// Generate/update lockfile with alias-aware entries
-	pluginEntries := make(map[string]registry.PluginLockEntry)
-	for a, p := range config.Plugins {
-		pluginEntries[a] = registry.PluginLockEntry{
-			PluginID: registry.PluginIdentifier(p.PluginIdentity(a)),
-			Version:  registry.PluginVersion(p.Version),
-		}
-	}
-
-	lockFile, err := client.GenerateLockFileAliased(KaloConfigFile, pluginEntries)
-	if err != nil {
-		return fmt.Errorf("failed to generate lockfile: %w", err)
-	}
-
-	err = client.SaveLockFile(lockFile, KaloLockFile)
-	if err != nil {
-		return fmt.Errorf("failed to save lockfile: %w", err)
+	if err := reconcileKaloLockFile(client, config); err != nil {
+		return err
 	}
 
 	fmt.Printf("Successfully installed %s@%s as '%s' to %s\n", pluginID, version, alias, localPath)
@@ -1039,6 +1045,7 @@ func readKaloLock() (*registry.LockFile, error) {
 		return nil, fmt.Errorf("failed to parse kalo.lock: %w", err)
 	}
 
+	registry.NormalizeLockFilePaths(&lockFile)
 	return &lockFile, nil
 }
 
