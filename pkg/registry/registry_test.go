@@ -43,15 +43,26 @@ func TestCalculateSHA256_NoFile(t *testing.T) {
 }
 
 func TestNormalizeLockFilePaths(t *testing.T) {
-	lf := &LockFile{
-		Plugins: map[PluginIdentifier]PluginLockInfo{
-			"@kalo-build/foo": {
-				Location: `.kalo\plugins\kalo-build-plugin-foo-v1.0.0.wasm`,
+	t.Run("windows separators in lockfile", func(t *testing.T) {
+		lf := &LockFile{
+			Plugins: map[PluginIdentifier]PluginLockInfo{
+				"@kalo-build/foo": {
+					Location: `.kalo\plugins\kalo-build-plugin-foo-v1.0.0.wasm`,
+				},
 			},
-		},
-	}
-	NormalizeLockFilePaths(lf)
-	assert.Equal(t, ".kalo/plugins/kalo-build-plugin-foo-v1.0.0.wasm", lf.Plugins["@kalo-build/foo"].Location)
+		}
+		NormalizeLockFilePaths(lf)
+		assert.Equal(t, ".kalo/plugins/kalo-build-plugin-foo-v1.0.0.wasm", lf.Plugins["@kalo-build/foo"].Location)
+	})
+	t.Run("posix unchanged", func(t *testing.T) {
+		lf := &LockFile{
+			Plugins: map[PluginIdentifier]PluginLockInfo{
+				"@kalo-build/foo": {Location: ".kalo/plugins/foo.wasm"},
+			},
+		}
+		NormalizeLockFilePaths(lf)
+		assert.Equal(t, ".kalo/plugins/foo.wasm", lf.Plugins["@kalo-build/foo"].Location)
+	})
 }
 
 func TestNormalizeLockFilePaths_nil(t *testing.T) {

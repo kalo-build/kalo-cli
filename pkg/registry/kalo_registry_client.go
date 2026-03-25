@@ -419,6 +419,14 @@ func (c *RegistryClient) GenerateLockFileAliased(configPath string, entries map[
 	return lockFile, nil
 }
 
+// normalizeLockLocation makes lockfile paths POSIX-style for VCS and Linux CI.
+// filepath.ToSlash only maps os.PathSeparator, which is '/' on Unix, so Windows-style
+// backslashes in stored paths would be left unchanged there — replace '\' explicitly first.
+func normalizeLockLocation(path string) string {
+	path = strings.ReplaceAll(path, `\`, `/`)
+	return filepath.ToSlash(path)
+}
+
 // NormalizeLockFilePaths converts each plugin location to forward slashes so kalo.lock is
 // portable across Windows and Unix when committed to version control.
 func NormalizeLockFilePaths(lockFile *LockFile) {
@@ -426,7 +434,7 @@ func NormalizeLockFilePaths(lockFile *LockFile) {
 		return
 	}
 	for id, info := range lockFile.Plugins {
-		info.Location = filepath.ToSlash(info.Location)
+		info.Location = normalizeLockLocation(info.Location)
 		lockFile.Plugins[id] = info
 	}
 }

@@ -203,7 +203,7 @@ plugins:
 
 After `kalo install`, the CLI writes **`kalo.lock`** next to `kalo.yaml`. It pins each plugin’s **version**, **SHA-256** (`resolvedHash`), and the path to the cached WASM under **`.kalo/plugins/`**.
 
-**Path separators:** On save and load, **`location`** paths are normalized to **forward slashes** (`/`) so the lockfile is the same on Windows and Linux/macOS and safe to **commit** for CI and teammates. The OS still stores files under `.kalo/plugins/` as usual; Go resolves POSIX-style paths correctly on Windows at runtime.
+**Path separators:** On save and load, **`location`** paths are normalized to **forward slashes** (`/`). `filepath.ToSlash` alone is not enough on Linux (it only maps `os.PathSeparator`, which is already `/` there), so backslashes from Windows are replaced explicitly—same result on every OS for committed lockfiles. The OS still stores files under `.kalo/plugins/` as usual; Go resolves POSIX-style paths correctly on Windows at runtime.
 
 **`kalo plugin install`:** A successful install or upgrade always refreshes **`kalo.lock`**. If the plugin is **already** at the requested version (`Nothing to do`), the CLI still **reconciles the lockfile** from **`kalo.yaml`** so a missing **`kalo.lock`** gets created (same as `kalo install` for that manifest).
 
