@@ -50,6 +50,24 @@ scoop bucket add kalo https://github.com/kalo-build/scoop-bucket
 scoop install kalo
 ```
 
+### APT (Debian / Ubuntu)
+
+Download the `.deb` package from [GitHub Releases](https://github.com/kalo-build/kalo-cli/releases) and install:
+
+```bash
+curl -LO https://github.com/kalo-build/kalo-cli/releases/latest/download/kalo_<version>_linux_amd64.deb
+sudo dpkg -i kalo_<version>_linux_amd64.deb
+```
+
+### RPM (Fedora / RHEL / CentOS)
+
+Download the `.rpm` package from [GitHub Releases](https://github.com/kalo-build/kalo-cli/releases) and install:
+
+```bash
+curl -LO https://github.com/kalo-build/kalo-cli/releases/latest/download/kalo_<version>_linux_amd64.rpm
+sudo rpm -i kalo_<version>_linux_amd64.rpm
+```
+
 ### Go Install
 
 ```bash
@@ -79,6 +97,8 @@ To upgrade Kalo CLI to the latest release, use the same command as your installa
 | **Go install (specific version)** | `go install github.com/kalo-build/kalo-cli/cmd/kalo@v0.1.0` |
 | **Homebrew** | `brew upgrade kalo` |
 | **Scoop** | `scoop update kalo` |
+| **APT (deb)** | Download the new `.deb` from [Releases](https://github.com/kalo-build/kalo-cli/releases) and `sudo dpkg -i kalo_*.deb` |
+| **RPM** | Download the new `.rpm` from [Releases](https://github.com/kalo-build/kalo-cli/releases) and `sudo rpm -U kalo_*.rpm` |
 | **Manual** | Download the new binary from [GitHub Releases](https://github.com/kalo-build/kalo-cli/releases) and replace your existing binary |
 
 Verify the version:
@@ -228,7 +248,7 @@ git push origin v1.2.3
 
 This triggers the release workflow which:
 1. Builds binaries for Linux, macOS, and Windows (amd64/arm64)
-2. Creates a GitHub Release with the binaries
+2. Creates a GitHub Release with the binaries, `.deb` and `.rpm` packages for Linux
 3. Updates Homebrew tap and Scoop bucket formulas
 
 ### Version Format

@@ -73,6 +73,19 @@ release:
   prerelease: auto
   draft: false
 
+nfpms:
+  - id: kalo
+    package_name: kalo
+    vendor: kalo-build
+    homepage: "https://github.com/kalo-build/kalo-cli"
+    maintainer: "Kalo <support@kalo.build>"
+    description: "Kalo CLI - Plugin-based code generation and database management"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+
 # Homebrew tap (optional - create kalo-build/homebrew-tap repo first)
 brews:
   - name: kalo
