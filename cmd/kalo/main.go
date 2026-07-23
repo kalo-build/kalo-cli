@@ -103,6 +103,33 @@ type pluginExecutionCache struct {
 	compiledModules map[string]wazero.CompiledModule
 }
 
+type pluginExecutionDiagnostic struct {
+	Plugin        string
+	Stage         string
+	PluginVersion string
+	InputFormat   string
+	InputVersion  string
+	Remediation   string
+	Err           error
+}
+
+func (d *pluginExecutionDiagnostic) Error() string {
+	return fmt.Sprintf(
+		"plugin diagnostic: plugin=%q stage=%q pluginVersion=%q inputFormat=%q inputVersion=%q finding=%q remediation=%q",
+		d.Plugin,
+		d.Stage,
+		d.PluginVersion,
+		d.InputFormat,
+		d.InputVersion,
+		d.Err.Error(),
+		d.Remediation,
+	)
+}
+
+func (d *pluginExecutionDiagnostic) Unwrap() error {
+	return d.Err
+}
+
 func main() {
 	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
@@ -471,14 +498,31 @@ func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *host
 }
 
 // runPluginStep resolves a step's alias, applies overrides, merges config, and executes.
-func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, executionCache *pluginExecutionCache, step kconfig.StepSpec, stageName string, stageConfig map[string]interface{}, config *kconfig.KaloConfig, lockFile *registry.LockFile, policy executionPolicy) error {
+func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, executionCache *pluginExecutionCache, step kconfig.StepSpec, stageName string, stageConfig map[string]interface{}, config *kconfig.KaloConfig, lockFile *registry.LockFile, policy executionPolicy) (runErr error) {
 	aliasOrName := step.Plugin
 	log.Printf("Running plugin: %s", aliasOrName)
+	diagnostic := &pluginExecutionDiagnostic{
+		Plugin:        aliasOrName,
+		Stage:         stageName,
+		PluginVersion: "unspecified",
+		InputFormat:   "unspecified",
+		InputVersion:  "unspecified",
+	}
+	defer func() {
+		if runErr == nil {
+			return
+		}
+		diagnostic.Err = runErr
+		diagnostic.Remediation = pluginRemediation(runErr)
+		runErr = diagnostic
+	}()
 
 	pluginDef, pluginID, exists := kconfig.ResolvePlugin(aliasOrName, config.Plugins)
 	if !exists {
 		return fmt.Errorf("plugin %s not found in kalo.yaml", aliasOrName)
 	}
+	diagnostic.Plugin = pluginID
+	diagnostic.PluginVersion = pluginDef.Version
 
 	// Look up in lock file by alias key first, then by plugin identity
 	pluginLock, exists := lockFile.Plugins[registry.PluginIdentifier(aliasOrName)]
@@ -508,6 +552,14 @@ func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *ho
 
 	// Apply step-level I/O overrides
 	effectiveDef := kconfig.ApplyStepOverrides(pluginDef, step)
+	if effectiveDef.Input != nil {
+		if effectiveDef.Input.Format != "" {
+			diagnostic.InputFormat = effectiveDef.Input.Format
+		}
+		if effectiveDef.Input.Version != "" {
+			diagnostic.InputVersion = effectiveDef.Input.Version
+		}
+	}
 
 	mergedConfig := kconfig.MergeConfig(config, aliasOrName, pluginID, effectiveDef.Config, stageConfig, step.Config)
 
@@ -526,6 +578,28 @@ func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *ho
 		return fmt.Errorf("plugin execution exceeded timeout %s (stage %q); increase --plugin-timeout only after reviewing the plugin", policy.PluginTimeout, stageName)
 	}
 	return err
+}
+
+func pluginRemediation(err error) string {
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "hash mismatch"), strings.Contains(message, "no resolvedHash"):
+		return "restore the reviewed artifact or regenerate kalo.lock through the approval flow"
+	case strings.Contains(message, "not found in kalo.lock"):
+		return "approve and lock this exact plugin identity, version, and digest before execution"
+	case strings.Contains(message, "missing and network access is disabled"):
+		return "run kalo install before restricted execution and review the resulting lock change"
+	case strings.Contains(message, "exceeded timeout"):
+		return "review the plugin for non-termination before increasing --plugin-timeout"
+	case strings.Contains(message, "memory"), strings.Contains(message, "out of bounds"):
+		return "review plugin allocation behavior before increasing --plugin-memory-mib"
+	case strings.Contains(message, "deny-network"), strings.Contains(message, "not instantiated"):
+		return "remove undeclared network capabilities or execute the operation outside the restricted compile pipeline"
+	case strings.Contains(message, "store"):
+		return "check the stage store declaration, access mode, and input/output compatibility"
+	default:
+		return "inspect the plugin manifest, kalo.lock entry, and stage configuration"
+	}
 }
 
 func pluginCommand() *cobra.Command {

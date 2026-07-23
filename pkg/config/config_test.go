@@ -146,14 +146,15 @@ func TestPluginIdentity_WithoutPluginField(t *testing.T) {
 func TestApplyStepOverrides_InputStore(t *testing.T) {
 	pluginDef := PluginDefinition{
 		Version: "v1.0.0",
-		Input:   &PluginIOSpec{Format: "KA:MO1:YAML1", Store: "KA_MO_YAML"},
+		Input:   &PluginIOSpec{Format: "KA:MO1:YAML1", Version: "1.0.0", Store: "KA_MO_YAML"},
 		Output:  &PluginIOSpec{Format: "KA:MO1:TS1", Store: "KA_MO_TS"},
 	}
-	step := StepSpec{Plugin: "ts-types", Input: &PluginIOSpec{Store: "KA_MO_EXT"}}
+	step := StepSpec{Plugin: "ts-types", Input: &PluginIOSpec{Version: "1.1.0", Store: "KA_MO_EXT"}}
 	result := ApplyStepOverrides(pluginDef, step)
 	require.NotNil(t, result.Input)
 	assert.Equal(t, "KA_MO_EXT", result.Input.Store)
 	assert.Equal(t, "KA:MO1:YAML1", result.Input.Format)
+	assert.Equal(t, "1.1.0", result.Input.Version)
 	assert.Equal(t, "KA_MO_TS", result.Output.Store)
 }
 

@@ -48,3 +48,23 @@ func TestRunTargetRejectsImpossibleMemoryLimitBeforeReadingProject(t *testing.T)
 
 	require.ErrorContains(t, err, "exceeds the WebAssembly maximum")
 }
+
+func TestPluginExecutionDiagnosticIncludesCompatibilityContext(t *testing.T) {
+	diagnostic := &pluginExecutionDiagnostic{
+		Plugin:        "@pagescape/plugin",
+		Stage:         "site-spec-to-static-ir",
+		PluginVersion: "v0.1.0",
+		InputFormat:   "PS:SITE1:JSON1",
+		InputVersion:  "0.1.0",
+		Remediation:   "restore the reviewed artifact",
+		Err:           fmt.Errorf("artifact hash mismatch"),
+	}
+
+	message := diagnostic.Error()
+	assert.Contains(t, message, `plugin="@pagescape/plugin"`)
+	assert.Contains(t, message, `stage="site-spec-to-static-ir"`)
+	assert.Contains(t, message, `inputFormat="PS:SITE1:JSON1"`)
+	assert.Contains(t, message, `inputVersion="0.1.0"`)
+	assert.Contains(t, message, `finding="artifact hash mismatch"`)
+	assert.Contains(t, message, `remediation="restore the reviewed artifact"`)
+}
