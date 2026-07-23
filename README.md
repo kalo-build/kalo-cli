@@ -227,6 +227,38 @@ After `kalo install`, the CLI writes **`kalo.lock`** next to `kalo.yaml`. It pin
 
 **`kalo plugin install`:** A successful install or upgrade always refreshes **`kalo.lock`**. If the plugin is **already** at the requested version (`Nothing to do`), the CLI still **reconciles the lockfile** from **`kalo.yaml`** so a missing **`kalo.lock`** gets created (same as `kalo install` for that manifest).
 
+### Restricted and deterministic execution
+
+Kalo verifies the SHA-256 of the exact plugin bytes loaded for execution against
+the plugin's `resolvedHash` in `kalo.lock`. A missing hash or mismatch fails
+closed.
+
+`kalo run` and `kalo compile` also accept opt-in restrictions for automation and
+untrusted inputs:
+
+```bash
+kalo compile \
+  --offline \
+  --deny-network \
+  --deterministic \
+  --read-only-inputs \
+  --plugin-timeout 2s \
+  --plugin-memory-mib 32
+```
+
+- `--offline` requires every locked artifact to already be present and disables
+  execution-time registry downloads.
+- `--deny-network` additionally rejects database stores. WASI plugins are not
+  given socket APIs.
+- `--deterministic` replaces Kalo's real-time host clock with a stable value.
+- `--read-only-inputs` prevents plugins from mutating input mounts; declared
+  output mounts remain writable.
+- `--plugin-timeout` and `--plugin-memory-mib` bound each plugin's runtime and
+  linear memory.
+
+Use `kalo install` separately before an offline run. These restrictions are
+opt-in so existing projects retain their current execution behavior.
+
 ## Building WASM Plugins
 
 To create a WASM plugin for Kalo CLI:

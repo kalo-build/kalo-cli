@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os/exec"
 	"testing"
 
@@ -24,4 +26,25 @@ func TestCLI_RunHelp(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "kalo run --help should succeed: %s", string(out))
 	assert.Contains(t, string(out), "run", "run help should mention run")
+	assert.Contains(t, string(out), "--offline")
+	assert.Contains(t, string(out), "--deny-network")
+	assert.Contains(t, string(out), "--deterministic")
+	assert.Contains(t, string(out), "--read-only-inputs")
+	assert.Contains(t, string(out), "--plugin-timeout")
+	assert.Contains(t, string(out), "--plugin-memory-mib")
+}
+
+func TestVerifyLockedPluginBytes(t *testing.T) {
+	wasmBytes := []byte("\x00asm")
+	expected := fmt.Sprintf("sha256:%x", sha256.Sum256(wasmBytes))
+
+	require.NoError(t, verifyLockedPluginBytes(wasmBytes, expected))
+	require.ErrorContains(t, verifyLockedPluginBytes(wasmBytes, ""), "no resolvedHash")
+	require.ErrorContains(t, verifyLockedPluginBytes(wasmBytes, "sha256:deadbeef"), "artifact hash mismatch")
+}
+
+func TestRunTargetRejectsImpossibleMemoryLimitBeforeReadingProject(t *testing.T) {
+	err := runTarget("compile", executionPolicy{PluginMemoryMiB: 4097})
+
+	require.ErrorContains(t, err, "exceeds the WebAssembly maximum")
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -86,6 +87,22 @@ var (
 	date    = "unknown"
 )
 
+// executionPolicy contains opt-in restrictions for plugin execution.
+// The zero value preserves existing Kalo behavior except for lock hash
+// verification, which is always enforced at the point of compilation.
+type executionPolicy struct {
+	Offline         bool
+	DenyNetwork     bool
+	Deterministic   bool
+	ReadOnlyInputs  bool
+	PluginTimeout   time.Duration
+	PluginMemoryMiB uint32
+}
+
+type pluginExecutionCache struct {
+	compiledModules map[string]wazero.CompiledModule
+}
+
 func main() {
 	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
@@ -112,22 +129,25 @@ func main() {
 }
 
 func compileCommand() *cobra.Command {
+	var policy executionPolicy
 	cmd := &cobra.Command{
 		Use:   "compile",
 		Short: "Run the default compile pipeline",
 		Long:  `Run the default compile pipeline defined in kalo.yaml`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := runTarget("compile"); err != nil {
+			if err := runTarget("compile", policy); err != nil {
 				log.Fatalf("Compilation failed: %v", err)
 			}
 			log.Println("Compilation completed successfully")
 		},
 	}
 
+	addExecutionPolicyFlags(cmd, &policy)
 	return cmd
 }
 
 func runCommand() *cobra.Command {
+	var policy executionPolicy
 	cmd := &cobra.Command{
 		Use:   "run <pipeline-or-plugin>",
 		Short: "Run a pipeline or individual plugin",
@@ -139,14 +159,24 @@ Examples:
   kalo run @kalo-build/plugin-morphe-db-manager # Run a single plugin`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := runTarget(args[0]); err != nil {
+			if err := runTarget(args[0], policy); err != nil {
 				log.Fatalf("Run failed: %v", err)
 			}
 			log.Println("Run completed successfully")
 		},
 	}
 
+	addExecutionPolicyFlags(cmd, &policy)
 	return cmd
+}
+
+func addExecutionPolicyFlags(cmd *cobra.Command, policy *executionPolicy) {
+	cmd.Flags().BoolVar(&policy.Offline, "offline", false, "Require locked plugin artifacts to already exist; never download during execution")
+	cmd.Flags().BoolVar(&policy.DenyNetwork, "deny-network", false, "Deny Kalo-managed network access (registry downloads and database stores)")
+	cmd.Flags().BoolVar(&policy.Deterministic, "deterministic", false, "Use deterministic host capabilities such as a stable plugin clock")
+	cmd.Flags().BoolVar(&policy.ReadOnlyInputs, "read-only-inputs", false, "Mount plugin input stores read-only")
+	cmd.Flags().DurationVar(&policy.PluginTimeout, "plugin-timeout", 0, "Maximum execution time per plugin (for example 2s; zero disables)")
+	cmd.Flags().Uint32Var(&policy.PluginMemoryMiB, "plugin-memory-mib", 0, "Maximum memory per plugin in MiB (zero uses the wazero default)")
 }
 
 func listCommand() *cobra.Command {
@@ -345,7 +375,11 @@ func listPipelines() error {
 }
 
 // runTarget runs a pipeline or individual plugin by name.
-func runTarget(target string) error {
+func runTarget(target string, policy executionPolicy) error {
+	if policy.PluginMemoryMiB > 4096 {
+		return fmt.Errorf("plugin memory limit %d MiB exceeds the WebAssembly maximum of 4096 MiB", policy.PluginMemoryMiB)
+	}
+
 	config, err := readKaloConfig()
 	if err != nil {
 		return fmt.Errorf("failed to read kalo.yaml: %w", err)
@@ -373,34 +407,44 @@ func runTarget(target string) error {
 	}
 
 	ctx := context.Background()
-	wasmRuntime := wazero.NewRuntime(ctx)
+	runtimeConfig := wazero.NewRuntimeConfig().
+		WithCloseOnContextDone(policy.PluginTimeout > 0)
+	if policy.PluginMemoryMiB > 0 {
+		runtimeConfig = runtimeConfig.WithMemoryLimitPages(policy.PluginMemoryMiB * 16)
+	}
+	wasmRuntime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer wasmRuntime.Close(ctx)
 
 	wasi_snapshot_preview1.MustInstantiate(ctx, wasmRuntime)
 
 	// Create shared host functions and register once
-	kaloHost := hostfuncs.NewKaloHost()
+	kaloHost := hostfuncs.NewKaloHostWithOptions(hostfuncs.HostOptions{
+		Deterministic: policy.Deterministic,
+	})
 	defer kaloHost.Close()
 
 	if err := kaloHost.Register(ctx, wasmRuntime); err != nil {
 		return fmt.Errorf("failed to register host functions: %w", err)
 	}
+	executionCache := &pluginExecutionCache{
+		compiledModules: make(map[string]wazero.CompiledModule),
+	}
 
 	// Check if target is a plugin (starts with @) or a pipeline
 	if strings.HasPrefix(target, "@") {
-		return runSinglePlugin(ctx, wasmRuntime, kaloHost, target, config, lockFile)
+		return runSinglePlugin(ctx, wasmRuntime, kaloHost, executionCache, target, config, lockFile, policy)
 	}
-	return runPipeline(ctx, wasmRuntime, kaloHost, target, config, lockFile)
+	return runPipeline(ctx, wasmRuntime, kaloHost, executionCache, target, config, lockFile, policy)
 }
 
 // runSinglePlugin runs a single plugin by name or alias.
-func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pluginName string, config *kconfig.KaloConfig, lockFile *registry.LockFile) error {
+func runSinglePlugin(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, executionCache *pluginExecutionCache, pluginName string, config *kconfig.KaloConfig, lockFile *registry.LockFile, policy executionPolicy) error {
 	step := kconfig.StepSpec{Plugin: pluginName}
-	return runPluginStep(ctx, wasmRuntime, kaloHost, step, nil, config, lockFile)
+	return runPluginStep(ctx, wasmRuntime, kaloHost, executionCache, step, "single", nil, config, lockFile, policy)
 }
 
 // runPipeline runs all steps in a pipeline.
-func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, pipelineName string, config *kconfig.KaloConfig, lockFile *registry.LockFile) error {
+func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, executionCache *pluginExecutionCache, pipelineName string, config *kconfig.KaloConfig, lockFile *registry.LockFile, policy executionPolicy) error {
 	// Resolve pipeline name (check direct name first, then aliases)
 	resolvedName, pipeline, exists := kconfig.ResolvePipeline(pipelineName, config.Pipelines)
 	if !exists {
@@ -417,8 +461,8 @@ func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *host
 		log.Printf("Running stage: %s", stage.Name)
 
 		for _, step := range stage.Steps {
-			if err := runPluginStep(ctx, wasmRuntime, kaloHost, step, stage.Config, config, lockFile); err != nil {
-				return fmt.Errorf("plugin %s failed: %w", step.Plugin, err)
+			if err := runPluginStep(ctx, wasmRuntime, kaloHost, executionCache, step, stage.Name, stage.Config, config, lockFile, policy); err != nil {
+				return fmt.Errorf("stage %q plugin %q failed: %w", stage.Name, step.Plugin, err)
 			}
 		}
 	}
@@ -427,7 +471,7 @@ func runPipeline(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *host
 }
 
 // runPluginStep resolves a step's alias, applies overrides, merges config, and executes.
-func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, step kconfig.StepSpec, stageConfig map[string]interface{}, config *kconfig.KaloConfig, lockFile *registry.LockFile) error {
+func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *hostfuncs.KaloHost, executionCache *pluginExecutionCache, step kconfig.StepSpec, stageName string, stageConfig map[string]interface{}, config *kconfig.KaloConfig, lockFile *registry.LockFile, policy executionPolicy) error {
 	aliasOrName := step.Plugin
 	log.Printf("Running plugin: %s", aliasOrName)
 
@@ -447,7 +491,13 @@ func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *ho
 
 	// Check if plugin file exists, if not attempt to download
 	pluginPath := pluginLock.Location
-	if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
+	if _, err := os.Stat(pluginPath); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("cannot access locked plugin artifact %q: %w", pluginPath, err)
+		}
+		if policy.Offline || policy.DenyNetwork {
+			return fmt.Errorf("locked plugin artifact %q is missing and network access is disabled; run 'kalo install' before restricted execution", pluginPath)
+		}
 		log.Printf("Plugin %s not found at %s, attempting download...", pluginID, pluginPath)
 		downloadedPath, downloadErr := downloadPluginFromRegistry(pluginID, string(pluginDef.Version))
 		if downloadErr != nil {
@@ -464,7 +514,18 @@ func runPluginStep(ctx context.Context, wasmRuntime wazero.Runtime, kaloHost *ho
 	execDef := effectiveDef
 	execDef.Config = mergedConfig
 
-	return executePlugin(ctx, wasmRuntime, kaloHost, pluginPath, config.Stores, execDef)
+	pluginCtx := ctx
+	cancel := func() {}
+	if policy.PluginTimeout > 0 {
+		pluginCtx, cancel = context.WithTimeout(ctx, policy.PluginTimeout)
+	}
+	defer cancel()
+
+	err := executePlugin(pluginCtx, wasmRuntime, kaloHost, executionCache, pluginPath, pluginLock.ResolvedHash, config.Stores, execDef, policy)
+	if policy.PluginTimeout > 0 && pluginCtx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("plugin execution exceeded timeout %s (stage %q); increase --plugin-timeout only after reviewing the plugin", policy.PluginTimeout, stageName)
+	}
+	return err
 }
 
 func pluginCommand() *cobra.Command {
@@ -1086,19 +1147,33 @@ func executePlugin(
 	ctx context.Context,
 	wasmRuntime wazero.Runtime,
 	kaloHost *hostfuncs.KaloHost,
+	executionCache *pluginExecutionCache,
 	pluginPath string,
+	expectedHash string,
 	stores map[string]kconfig.Store,
 	pluginDef kconfig.PluginDefinition,
+	policy executionPolicy,
 ) error {
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
 		return fmt.Errorf("failed to read plugin WASM file: %w", err)
 	}
-
-	compiledWasm, err := wasmRuntime.CompileModule(ctx, wasmBytes)
-	if err != nil {
-		return fmt.Errorf("module compile failed: %w", err)
+	if err := verifyLockedPluginBytes(wasmBytes, expectedHash); err != nil {
+		return fmt.Errorf("refusing to execute locked plugin %q: %w; restore the approved artifact or regenerate kalo.lock through the normal review flow", pluginPath, err)
 	}
+
+	cacheKey := strings.ToLower(expectedHash)
+	compiledWasm, exists := executionCache.compiledModules[cacheKey]
+	if !exists {
+		compiledWasm, err = wasmRuntime.CompileModule(ctx, wasmBytes)
+		if err != nil {
+			return fmt.Errorf("module compile failed: %w", err)
+		}
+		executionCache.compiledModules[cacheKey] = compiledWasm
+	}
+	// Cached compiled modules intentionally live until the shared runtime closes.
+	// This lets wazero reuse verified machine code when a pipeline invokes the
+	// same locked artifact repeatedly, without extending trust beyond this run.
 
 	// Build store configurations for SDK
 	storeConfigs := make(map[string]StoreConfig)
@@ -1107,7 +1182,7 @@ func executePlugin(
 	var tempDirs []string // Track temp directories for cleanup
 
 	// Helper to configure a store
-	configureStore := func(storeName, mountPath string) error {
+	configureStore := func(storeName, mountPath string, readOnly bool) error {
 		if storeName == "" {
 			return nil
 		}
@@ -1127,8 +1202,12 @@ func executePlugin(
 				return fmt.Errorf("store '%s': localFileSystem requires 'path' option", storeName)
 			}
 			storePath = expandEnvWithDefaults(storePath)
-			fsConfig = fsConfig.WithDirMount(storePath, mountPath)
-			log.Printf("Mounting store '%s' at '%s' (path: %s)", storeName, mountPath, storePath)
+			if readOnly {
+				fsConfig = fsConfig.WithReadOnlyDirMount(storePath, mountPath)
+			} else {
+				fsConfig = fsConfig.WithDirMount(storePath, mountPath)
+			}
+			log.Printf("Mounting store '%s' at '%s' (path: %s, read-only: %t)", storeName, mountPath, storePath, readOnly)
 
 			storeConfigs[storeName] = StoreConfig{
 				ID:        storeID,
@@ -1150,8 +1229,12 @@ func executePlugin(
 			}
 			tempDirs = append(tempDirs, checkoutResult.TempDir)
 
-			fsConfig = fsConfig.WithDirMount(checkoutResult.TempDir, mountPath)
-			log.Printf("Mounting git store '%s' at '%s' (ref: %s, commit: %s)", storeName, mountPath, gitRef, checkoutResult.CommitHash[:8])
+			if readOnly {
+				fsConfig = fsConfig.WithReadOnlyDirMount(checkoutResult.TempDir, mountPath)
+			} else {
+				fsConfig = fsConfig.WithDirMount(checkoutResult.TempDir, mountPath)
+			}
+			log.Printf("Mounting git store '%s' at '%s' (ref: %s, commit: %s, read-only: %t)", storeName, mountPath, gitRef, checkoutResult.CommitHash[:8], readOnly)
 
 			storeConfigs[storeName] = StoreConfig{
 				ID:           storeID,
@@ -1163,6 +1246,9 @@ func executePlugin(
 			}
 
 		case kconfig.StoreTypeCloudSqlDatabase:
+			if policy.DenyNetwork {
+				return fmt.Errorf("store '%s': cloudSqlDatabase is disabled by --deny-network", storeName)
+			}
 			connString := store.Connection()
 			if connString == "" {
 				return fmt.Errorf("store '%s': cloudSqlDatabase requires 'connection' option", storeName)
@@ -1200,19 +1286,19 @@ func executePlugin(
 	// Configure named inputs (for plugins that need multiple inputs)
 	for inputName, inputSpec := range pluginDef.Inputs {
 		mountPath := "/" + inputName // e.g., /base, /head
-		if err := configureStore(inputSpec.Store, mountPath); err != nil {
+		if err := configureStore(inputSpec.Store, mountPath, policy.ReadOnlyInputs); err != nil {
 			return err
 		}
 	}
 
 	// Configure default input and output stores
 	if pluginDef.Input != nil && pluginDef.Input.Store != "" {
-		if err := configureStore(pluginDef.Input.Store, "/input"); err != nil {
+		if err := configureStore(pluginDef.Input.Store, "/input", policy.ReadOnlyInputs); err != nil {
 			return err
 		}
 	}
 	if pluginDef.Output != nil && pluginDef.Output.Store != "" {
-		if err := configureStore(pluginDef.Output.Store, "/output"); err != nil {
+		if err := configureStore(pluginDef.Output.Store, "/output", false); err != nil {
 			return err
 		}
 	}
@@ -1253,6 +1339,18 @@ func executePlugin(
 	}
 	defer pluginModule.Close(ctx)
 
+	return nil
+}
+
+func verifyLockedPluginBytes(wasmBytes []byte, expectedHash string) error {
+	if expectedHash == "" {
+		return fmt.Errorf("kalo.lock entry has no resolvedHash")
+	}
+
+	actualHash := fmt.Sprintf("sha256:%x", sha256.Sum256(wasmBytes))
+	if !strings.EqualFold(actualHash, expectedHash) {
+		return fmt.Errorf("artifact hash mismatch: lock expects %s, execution bytes are %s", expectedHash, actualHash)
+	}
 	return nil
 }
 
