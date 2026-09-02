@@ -46,18 +46,20 @@ for wasm_file in "$PLUGINS_DIR"/*.wasm; do
     gcs_wasm_path="$GCS_BUCKET/@kalo-build/plugin-$name/$version/plugin.wasm"
     gcs_manifest_path="$GCS_BUCKET/@kalo-build/plugin-$name/$version/plugin.yaml"
     
+    # A missing manifest makes the registry entry unusable for the CLI and the
+    # browser explorer. Validate it before mutating the published artifact.
+    manifest_file="$KALO_BUILD_DIR/plugin-$name/plugin.yaml"
+    if [ ! -f "$manifest_file" ]; then
+        echo "Error: No manifest found at $manifest_file"
+        exit 1
+    fi
+
     # Upload WASM
     echo "  Uploading WASM: $filename -> $gcs_wasm_path"
     gsutil cp "$wasm_file" "$gcs_wasm_path"
     
-    # Upload manifest if it exists
-    manifest_file="$KALO_BUILD_DIR/plugin-$name/plugin.yaml"
-    if [ -f "$manifest_file" ]; then
-        echo "  Uploading manifest: plugin.yaml -> $gcs_manifest_path"
-        gsutil cp "$manifest_file" "$gcs_manifest_path"
-    else
-        echo "  WARN: No manifest found at $manifest_file"
-    fi
+    echo "  Uploading manifest: plugin.yaml -> $gcs_manifest_path"
+    gsutil cp "$manifest_file" "$gcs_manifest_path"
 done
 
 echo ""
@@ -70,3 +72,6 @@ echo ""
 echo "Plugins are now available at:"
 echo "  https://storage.googleapis.com/kalo-development-kalo-plugin-registry-plugins/@kalo-build/plugin-NAME/VERSION/plugin.wasm"
 echo "  https://storage.googleapis.com/kalo-development-kalo-plugin-registry-plugins/@kalo-build/plugin-NAME/VERSION/plugin.yaml"
+echo ""
+echo "Run the registry's Browser artifact attestations workflow after publishing"
+echo "to pin hashes and publish execution metadata."

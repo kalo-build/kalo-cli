@@ -22,6 +22,7 @@ PLUGINS=(
     "plugin-morphe-psql-types:morphe-psql-types:v1.0.0"
     "plugin-morphe-go-struct:morphe-go-struct:v1.0.0"
     "plugin-morphe-ts-types:morphe-ts-types:v1.0.0"
+    "plugin-morphe-py-types:morphe-py-types:v1.0.0"
     "plugin-morphe-zod-types:morphe-zod-types:v1.0.0"
     "plugin-morphe-morpherepo:morphe-morpherepo:v1.0.0"
     "plugin-morpherepo-go:morpherepo-go:v1.0.0"
