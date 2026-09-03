@@ -140,6 +140,25 @@ kalo plugin install @kalo-build/plugin-morphe-go-struct
 | `kalo compile` | Shorthand for `kalo run compile` |
 | `kalo plugin install <plugin>` | Install a specific plugin from registry |
 
+### Experimental SPEC v0.1-alpha adapter
+
+Kalo can validate an offline [SPEC](https://github.com/spec-contracts/spec)
+descriptor catalog, derive a deterministic nominal route from Processor edges,
+and execute selected `wasm-wasi-preview1` ProcessorImplementations:
+
+```shell
+kalo spec validate ./descriptors
+kalo spec route --catalog ./descriptors --from SPECX:SOURCE@1 --to SPECX:TARGET@1
+kalo spec run --catalog ./descriptors --from SPECX:SOURCE@1 --to SPECX:TARGET@1 --input ./source.json --output ./spec-output --offline --deny-network
+```
+
+This path reads SPEC descriptors directly and does not use `kalo.yaml` for
+planning. It validates JSON values at every selected Representation Binding,
+verifies executable artifact digests, and emits linked SPEC Receipts. The alpha
+host supports local filesystem I/O and WASI Preview 1 only. It rejects required
+state, unknown required extensions, unsupported representation mechanisms, and
+unsafe or open-world effects unless explicitly authorized.
+
 ## Configuration
 
 Kalo CLI uses a YAML configuration file (`kalo.yaml` by default) to define stores, plugins, and pipelines.

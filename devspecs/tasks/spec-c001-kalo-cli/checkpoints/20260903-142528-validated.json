@@ -1,0 +1,142 @@
+{
+  "schema_version": 3,
+  "event_kind": "task_checkpoint",
+  "checkpoint_id": "cp_20260903T142528Z_a01_validated",
+  "task_id": "spec-c001-kalo-cli",
+  "workspace_id": "spec-pdpp-kalo-evidence",
+  "workspace_root": "C:\\Users\\brenn\\go\\src\\github.com\\kalo-build\\spec-pdpp-kalo-evidence",
+  "parent_change": "SPEC-C001",
+  "repo_alias": "kalo-cli",
+  "target": "A01",
+  "series": "A",
+  "query": "Implement native SPEC validate route run and receipts for workspace change SPEC-C001: SPEC v0.1-alpha external review polish",
+  "slice": "A01",
+  "slice_title": "Implement native SPEC validate route run and receipts",
+  "parent_slice": "A01",
+  "stage": "validated",
+  "decision": "promote",
+  "created_at": "2026-09-03T14:25:28Z",
+  "goal": "Native SPEC v0.1-alpha catalog validation, deterministic routing, execution, boundary validation, and receipts",
+  "description": "Implemented generic SPEC adapter and public kalo spec validate/route/run commands; verified an end-to-end Amazon route against the evidence catalog.",
+  "resources": [
+    "../A00-index.md",
+    "../A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+    "../A01-implement-native-spec-validate-route-run-and-rec-result.md",
+    "../task.json"
+  ],
+  "files_edited": [
+    "README.md",
+    "cmd/kalo/main.go",
+    "go.mod",
+    "go.sum",
+    "cmd/kalo/spec.go",
+    "devspecs/tasks/spec-c001-kalo-cli/A00-index.md",
+    "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+    "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-result.md",
+    "devspecs/tasks/spec-c001-kalo-cli/task.json",
+    "internal/specv0/catalog.go",
+    "internal/specv0/model.go",
+    "internal/specv0/route.go",
+    "internal/specv0/route_test.go"
+  ],
+  "tests_run": [
+    "go test ./..."
+  ],
+  "actual_context": {
+    "files_edited": [
+      "README.md",
+      "cmd/kalo/main.go",
+      "go.mod",
+      "go.sum",
+      "cmd/kalo/spec.go",
+      "devspecs/tasks/spec-c001-kalo-cli/A00-index.md",
+      "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+      "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-result.md",
+      "devspecs/tasks/spec-c001-kalo-cli/task.json",
+      "internal/specv0/catalog.go",
+      "internal/specv0/model.go",
+      "internal/specv0/route.go",
+      "internal/specv0/route_test.go"
+    ],
+    "tests_run": [
+      "go test ./..."
+    ]
+  },
+  "predicted_context_feedback": {
+    "relevant_found": [
+      "cmd/kalo/main.go",
+      "cmd/kalo/spec.go",
+      "internal/specv0/catalog.go",
+      "internal/specv0/model.go",
+      "internal/specv0/route.go"
+    ]
+  },
+  "evidence": {
+    "git_diff": {
+      "command": "git status --short --untracked-files=all; git diff --stat; git diff --name-only; git diff --cached --name-only; git ls-files --others --exclude-standard",
+      "status": " M README.md\n M cmd/kalo/main.go\n M go.mod\n M go.sum\n?? cmd/kalo/spec.go\n?? devspecs/tasks/spec-c001-kalo-cli/A00-index.md\n?? devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-plan.md\n?? devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-result.md\n?? devspecs/tasks/spec-c001-kalo-cli/task.json\n?? internal/specv0/catalog.go\n?? internal/specv0/model.go\n?? internal/specv0/route.go\n?? internal/specv0/route_test.go\n",
+      "stat": " README.md        | 19 +++++++++++++++++++\n cmd/kalo/main.go |  1 +\n go.mod           |  1 +\n go.sum           |  4 ++++\n 4 files changed, 25 insertions(+)\n",
+      "changed_files": [
+        "README.md",
+        "cmd/kalo/main.go",
+        "go.mod",
+        "go.sum",
+        "cmd/kalo/spec.go",
+        "devspecs/tasks/spec-c001-kalo-cli/A00-index.md",
+        "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+        "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-result.md",
+        "devspecs/tasks/spec-c001-kalo-cli/task.json",
+        "internal/specv0/catalog.go",
+        "internal/specv0/model.go",
+        "internal/specv0/route.go",
+        "internal/specv0/route_test.go"
+      ],
+      "max_bytes": 12000,
+      "truncated": false
+    },
+    "test_commands": [
+      {
+        "command": "go test ./...",
+        "exit_code": 0,
+        "output": "ok  \tgithub.com/kalo-build/kalo-cli/cmd/kalo\t(cached)\nok  \tgithub.com/kalo-build/kalo-cli/internal/specv0\t(cached)\nok  \tgithub.com/kalo-build/kalo-cli/pkg/config\t(cached)\nok  \tgithub.com/kalo-build/kalo-cli/pkg/hostfuncs\t(cached)\nok  \tgithub.com/kalo-build/kalo-cli/pkg/registry\t(cached)\n",
+        "max_bytes": 12000,
+        "truncated": false
+      }
+    ],
+    "git_diff_paths": [
+      "README.md",
+      "cmd/kalo/main.go",
+      "go.mod",
+      "go.sum",
+      "cmd/kalo/spec.go",
+      "devspecs/tasks/spec-c001-kalo-cli/A00-index.md",
+      "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+      "devspecs/tasks/spec-c001-kalo-cli/A01-implement-native-spec-validate-route-run-and-rec-result.md",
+      "devspecs/tasks/spec-c001-kalo-cli/task.json",
+      "internal/specv0/catalog.go",
+      "internal/specv0/model.go",
+      "internal/specv0/route.go",
+      "internal/specv0/route_test.go"
+    ],
+    "plan_refs": [
+      "../A00-index.md",
+      "../A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+      "../A01-implement-native-spec-validate-route-run-and-rec-result.md",
+      "../task.json"
+    ]
+  },
+  "learnings": [
+    {
+      "learning_type": "evidence",
+      "summary": "PDP source schemas are wrapper documents; validate URI fragment /schema after hashing the full pinned file",
+      "evidence_refs": [
+        "descriptors/bindings"
+      ],
+      "applies_to": "SPEC artifact resolution",
+      "confidence": "high"
+    }
+  ],
+  "next": {
+    "recommended_decision": "complete"
+  }
+}

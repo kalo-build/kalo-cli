@@ -148,6 +148,7 @@ func main() {
 	rootCmd.AddCommand(pluginCommand())
 	rootCmd.AddCommand(listCommand())
 	rootCmd.AddCommand(installCommand())
+	rootCmd.AddCommand(specCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
