@@ -371,15 +371,15 @@ func (catalog *Catalog) validateLinks() error {
 			return err
 		}
 	}
-	receiptIDs := map[string]bool{}
+	receiptIDs := map[string]*Receipt{}
 	for _, receipt := range catalog.Receipts {
 		if err := catalog.checkExtensions(receipt.Resource); err != nil {
 			return err
 		}
-		if receiptIDs[receipt.ReceiptID] {
+		if receiptIDs[receipt.ReceiptID] != nil {
 			return fmt.Errorf("duplicate Receipt identity %s", receipt.ReceiptID)
 		}
-		receiptIDs[receipt.ReceiptID] = true
+		receiptIDs[receipt.ReceiptID] = receipt
 		if receipt.Subject.Processor != "" {
 			processor := catalog.Processors[receipt.Subject.Processor]
 			if processor == nil || processor.VersionID != receipt.Subject.ProcessorVersionID {
@@ -413,18 +413,41 @@ func (catalog *Catalog) validateLinks() error {
 	}
 	for _, receipt := range catalog.Receipts {
 		for _, parent := range receipt.ParentReceipts {
-			if !receiptIDs[parent] {
+			if receiptIDs[parent] == nil {
 				return fmt.Errorf("Receipt %s: unresolved parent Receipt %s", receipt.ReceiptID, parent)
 			}
 		}
 		for _, node := range receipt.Route {
 			processor := catalog.Processors[node.Processor]
-			if processor == nil || processor.VersionID != node.ProcessorVersionID || !receiptIDs[node.ReceiptID] {
+			nodeReceipt := receiptIDs[node.ReceiptID]
+			if processor == nil || processor.VersionID != node.ProcessorVersionID || nodeReceipt == nil || nodeReceipt.Subject.Processor != node.Processor || nodeReceipt.Subject.ProcessorVersionID != node.ProcessorVersionID {
 				return fmt.Errorf("Receipt %s: malformed route node %s", receipt.ReceiptID, node.Node)
+			}
+		}
+		for index := 1; index < len(receipt.Route); index++ {
+			previous := receiptIDs[receipt.Route[index-1].ReceiptID]
+			current := receiptIDs[receipt.Route[index].ReceiptID]
+			if !receiptArtifactsLink(previous.Outputs, current.Inputs) {
+				return fmt.Errorf("Receipt %s: route nodes %s and %s have no linked artifact", receipt.ReceiptID, receipt.Route[index-1].Node, receipt.Route[index].Node)
 			}
 		}
 	}
 	return nil
+}
+
+func receiptArtifactsLink(outputs, inputs []ReceiptArtifact) bool {
+	for _, output := range outputs {
+		for _, input := range inputs {
+			if output.Contract == input.Contract &&
+				output.ContractVersionID == input.ContractVersionID &&
+				output.Binding == input.Binding &&
+				output.BindingVersionID == input.BindingVersionID &&
+				output.ArtifactDigest == input.ArtifactDigest {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateVersionedAddress(resource Resource) (Address, error) {

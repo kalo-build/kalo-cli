@@ -97,3 +97,15 @@ func TestConformanceDigestMismatchRejected(t *testing.T) {
 	require.NoError(t, VerifyDigest(path, correct))
 	require.ErrorContains(t, VerifyDigest(path, "sha256:"+strings.Repeat("0", 64)), "digest mismatch")
 }
+
+func TestConformanceReceiptArtifactLink(t *testing.T) {
+	output := ReceiptArtifact{
+		Contract: "TEST:VALUE@1", ContractVersionID: "contract-version-id",
+		Binding: "TEST:VALUE@1:JSON@1", BindingVersionID: "binding-version-id",
+		ArtifactDigest: "sha256:" + strings.Repeat("a", 64),
+	}
+	input := output
+	require.True(t, receiptArtifactsLink([]ReceiptArtifact{output}, []ReceiptArtifact{input}))
+	input.ArtifactDigest = "sha256:" + strings.Repeat("b", 64)
+	require.False(t, receiptArtifactsLink([]ReceiptArtifact{output}, []ReceiptArtifact{input}))
+}
