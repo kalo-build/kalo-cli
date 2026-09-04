@@ -1,0 +1,309 @@
+{
+  "task_id": "spec-c003-kalo-conformance",
+  "series": "B",
+  "profile": "code-change",
+  "query": "Add Kalo test adapter hooks for the SPEC v0.1-alpha conformance suite",
+  "status": "packed",
+  "created_at": "2026-09-04T16:33:34Z",
+  "updated_at": "2026-09-04T16:35:12Z",
+  "repo_root": "C:\\Users\\brenn\\go\\src\\github.com\\kalo-build\\kalo-cli",
+  "workspace": "C:/Users/brenn/go/src/github.com/kalo-build/kalo-cli/devspecs/tasks/spec-c003-kalo-conformance",
+  "artifacts": {
+    "series": "B",
+    "index": "B00-index.md",
+    "first_slice": "B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+    "result": "B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+    "slices": [
+      {
+        "id": "B01",
+        "title": "Exercise canonical vectors and preservation behavior",
+        "plan": "B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+        "result": "B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+        "kind": "slice",
+        "stage": "completed",
+        "decision": "complete",
+        "updated_at": "2026-09-04T16:35:12Z",
+        "latest_checkpoint_id": "cp_20260904T163512Z_b01_completed",
+        "latest_checkpoint": "checkpoints/20260904-163512-completed.md",
+        "latest_checkpoint_json": "checkpoints/20260904-163512-completed.json"
+      }
+    ]
+  },
+  "predicted_context": {
+    "relevant_areas": [
+      "cmd/kalo",
+      "pkg/hostfuncs",
+      "pkg/registry",
+      "pkg/config"
+    ],
+    "primary_files": [
+      {
+        "path": "cmd/kalo/spec.go",
+        "title": "cmd/kalo/spec.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "pack tier: related (explicit exact plan/track ID reference)",
+          "exact intent ID: explicit body reference",
+          "anchor-first ranking: score 10.904; matches kalo, spec, v01alpha; fields path, title, body, symbol",
+          "query term match in path: kalo"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main.go",
+        "title": "cmd/kalo/main.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: kalo",
+          "query term match in body: add",
+          "query term match in body: alpha"
+        ]
+      },
+      {
+        "path": "pkg/hostfuncs/host.go",
+        "title": "pkg/hostfuncs/host.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in body: add",
+          "query term match in body: kalo"
+        ]
+      },
+      {
+        "path": "pkg/registry/kalo_registry_client.go",
+        "title": "pkg/registry/kalo_registry_client.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: kalo",
+          "query term match in body: add"
+        ]
+      },
+      {
+        "path": "pkg/registry/kalo_registry.go",
+        "title": "pkg/registry/kalo_registry.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: kalo",
+          "query term match in body: spec",
+          "authority prior: stale or superseded"
+        ]
+      },
+      {
+        "path": "pkg/hostfuncs/system.go",
+        "title": "pkg/hostfuncs/system.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: filesystem_source_family_recovery",
+          "query term match in body: kalo"
+        ]
+      }
+    ],
+    "tests": [
+      {
+        "path": "cmd/kalo/main_test.go",
+        "title": "cmd/kalo/main_test.go",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "query term match in path: kalo",
+          "query term match in path: test",
+          "test-case behavior signal",
+          "authority prior: behavioral test signal"
+        ]
+      },
+      {
+        "path": "pkg/config/config_test.go",
+        "title": "pkg/config/config_test.go",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_test_reservation",
+          "pack tier: related (reserved manifest test with direct query evidence)",
+          "test-name token anchor",
+          "query term match in path: test",
+          "test-case behavior signal"
+        ]
+      },
+      {
+        "path": "pkg/hostfuncs/system_test.go",
+        "title": "pkg/hostfuncs/system_test.go",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_test_reservation",
+          "pack tier: related (reserved manifest test with direct query evidence)",
+          "query term match in path: test",
+          "test-case behavior signal",
+          "authority prior: behavioral test signal"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main_test.go#L52",
+        "title": "TestPluginExecutionDiagnosticIncludesCompatibilityContext",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in path: kalo",
+          "query term match in path: test",
+          "test-case behavior signal",
+          "authority prior: behavioral test signal"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main_test.go#L14",
+        "title": "TestCLI_RootHelp",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in path: kalo",
+          "query term match in path: test",
+          "test-case behavior signal",
+          "authority prior: behavioral test signal"
+        ]
+      },
+      {
+        "path": "pkg/registry/registry_test.go#L14",
+        "title": "TestPluginLockInfo_PluginIdentity",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in path: test",
+          "query term match in body: kalo",
+          "test-case behavior signal",
+          "authority prior: behavioral test signal"
+        ]
+      }
+    ],
+    "docs_plans_config": [
+      {
+        "path": "pkg/config/config.go",
+        "title": "pkg/config/config.go (go)",
+        "kind": "source_context",
+        "role": "config_schema",
+        "evidence": [
+          "relationship expansion: filesystem_source_family_recovery",
+          "query term match in body: kalo",
+          "query term match in body: spec"
+        ]
+      }
+    ],
+    "related_git_receipts": [
+      {
+        "sha": "cbb63ba5872b9a366228e3cac2e14d87fb042452",
+        "short_sha": "cbb63ba",
+        "committed_at": "2026-09-03",
+        "subject": "feat: add native SPEC v0.1-alpha adapter",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/spec.go"
+        ],
+        "matched_terms": [
+          "adapter",
+          "v0.1-alpha",
+          "kalo",
+          "spec"
+        ],
+        "signals": [
+          "touched 2 packed path(s)",
+          "matched query anchors",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "3b914d35ecabeb935559fc7b6fdfbacbc9a3d139",
+        "short_sha": "3b914d3",
+        "committed_at": "2026-03-15",
+        "subject": "feat: plugin reuse (aliasing) with pipeline config / store overrides, refactor + basic test coverage",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/main_test.go",
+          "pkg/config/config_test.go"
+        ],
+        "matched_terms": [
+          "kalo"
+        ],
+        "signals": [
+          "touched 5 packed path(s)",
+          "matched query anchors",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "f7254260a1a267ea05d9a1b895866a64ad291aa1",
+        "short_sha": "f725426",
+        "committed_at": "2026-07-23",
+        "subject": "fix(runtime): enforce restricted plugin execution",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/main_test.go",
+          "pkg/hostfuncs/host.go"
+        ],
+        "matched_terms": [
+          "kalo"
+        ],
+        "signals": [
+          "touched 4 packed path(s)",
+          "matched query anchors",
+          "cross-file change"
+        ]
+      }
+    ]
+  },
+  "freshness_warnings": [
+    {
+      "path": "internal/specv0/catalog_test.go",
+      "reason": "on-disk path matched task terms but was not in the indexed candidate set: test, spec"
+    },
+    {
+      "path": "internal/specv0/route_test.go",
+      "reason": "on-disk path matched task terms but was not in the indexed candidate set: test, spec"
+    }
+  ],
+  "risk_cards": [
+    {
+      "id": "stale-index",
+      "title": "On-disk paths matched the task but were not indexed",
+      "severity": "medium",
+      "source": "freshness",
+      "evidence": [
+        "`internal/specv0/catalog_test.go` - on-disk path matched task terms but was not in the indexed candidate set: test, spec",
+        "`internal/specv0/route_test.go` - on-disk path matched task terms but was not in the indexed candidate set: test, spec"
+      ],
+      "agent_check": "Inspect the warned files or refresh the index before trusting missing context.",
+      "count": 2
+    }
+  ],
+  "confidence": {
+    "primary_file_confidence": "high",
+    "test_coverage_confidence": "high",
+    "docs_config_confidence": "medium",
+    "git_receipt_confidence": "high",
+    "noise_risk": "low",
+    "pack_completeness": "high",
+    "why": [
+      "found 6 likely primary file(s)",
+      "found 6 likely test file(s)",
+      "found 3 related Git receipt(s)"
+    ],
+    "agent_instruction": "Validate the test and integration surface before editing. Record critical misses and distracting inclusions in the slice result or a task checkpoint."
+  },
+  "durability": {
+    "required": true
+  }
+}
