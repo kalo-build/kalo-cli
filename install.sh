@@ -110,6 +110,9 @@ main() {
     tar -xzf "$TMP_DIR/$FILENAME" -C "$TMP_DIR"
 
     info "Installing to $INSTALL_DIR..."
+    if [ ! -d "$INSTALL_DIR" ]; then
+        mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"
+    fi
     if [ -w "$INSTALL_DIR" ]; then
         mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
