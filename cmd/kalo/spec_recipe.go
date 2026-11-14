@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -243,7 +244,7 @@ func latestRecipeVersion(client *http.Client, name string) (string, error) {
 		if err != nil {
 			var status *httpStatusError
 			if errors.As(err, &status) && (status.Code == http.StatusForbidden || status.Code == http.StatusTooManyRequests) {
-				return "", fmt.Errorf("find latest version of recipe %s: GitHub API rate limit reached (%s); pass --recipe-version <version> to skip the lookup", name, status.Status)
+				return "", fmt.Errorf("find latest version of recipe %s: GitHub API refused the request (%s), usually the rate limit; pass --recipe-version <version> to skip the lookup", name, status.Status)
 			}
 			return "", fmt.Errorf("find latest version of recipe %s (or pass --recipe-version): %w", name, err)
 		}
@@ -252,6 +253,9 @@ func latestRecipeVersion(client *http.Client, name string) (string, error) {
 			return "", fmt.Errorf("find latest version of recipe %s: %w", name, err)
 		}
 		releases = append(releases, pageReleases...)
+		if next != "" && !sameHost(next, url) {
+			return "", fmt.Errorf("find latest version of recipe %s: next-page link %s leaves the API host; pass --recipe-version <version>", name, next)
+		}
 		url = next
 	}
 	prefix := "recipe-" + name + "-v"
@@ -288,6 +292,13 @@ var nextLinkPattern = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
 func httpGet(client *http.Client, url string, limit int64) ([]byte, error) {
 	data, _, err := httpGetPage(client, url, limit)
 	return data, err
+}
+
+// sameHost reports whether two absolute URLs share scheme and host.
+func sameHost(a, b string) bool {
+	ua, errA := neturl.Parse(a)
+	ub, errB := neturl.Parse(b)
+	return errA == nil && errB == nil && ua.Host != "" && ua.Scheme == ub.Scheme && ua.Host == ub.Host
 }
 
 // httpGetPage also returns the rel="next" URL of a Link header, if any.
@@ -572,7 +583,11 @@ func checkDestinations(recipeRoot, outRoot string, manifest *recipeManifest, opt
 	type destination struct{ flag, path string }
 	var destinations []destination
 	for _, output := range manifest.Outputs {
-		destinations = append(destinations, destination{"--out " + output.Dir, filepath.Join(outRoot, output.Dir)})
+		path := filepath.Join(outRoot, output.Dir)
+		if pathWithin(path, recipeRoot) || pathWithin(recipeRoot, path) {
+			return fmt.Errorf("--out %s overlaps the recipe folder %s", path, recipeRoot)
+		}
+		destinations = append(destinations, destination{"--out " + output.Dir, path})
 	}
 	for flag, dir := range map[string]string{"--receipts": options.ReceiptsDir, "--keep-specs": options.KeepSpecsDir} {
 		if dir == "" {

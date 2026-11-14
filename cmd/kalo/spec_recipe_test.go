@@ -212,6 +212,21 @@ func TestRecipeLatestVersionFollowsPagesAndExplainsRateLimit(t *testing.T) {
 	require.ErrorContains(t, err, "--recipe-version")
 }
 
+func TestRecipeLatestVersionRefusesNextLinkToAnotherHost(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `[{"tag_name":"recipe-fixture-v9.9.9"}]`)
+	}))
+	t.Cleanup(other.Close)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Link", fmt.Sprintf(`<%s/releases?page=2>; rel="next"`, other.URL))
+		fmt.Fprint(w, `[{"tag_name":"recipe-fixture-v0.2.0"}]`)
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("KALO_RECIPE_RELEASES_API", server.URL+"/releases")
+	_, err := latestRecipeVersion(server.Client(), "fixture")
+	require.ErrorContains(t, err, "leaves the API host")
+}
+
 func TestRecipeExtractCapsEntries(t *testing.T) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
@@ -234,6 +249,7 @@ func TestRecipeRejectsOverlappingDestinationsBeforeWriting(t *testing.T) {
 		{LocalCatalog: root, Input: userInput(t, root), Out: out, KeepSpecsDir: filepath.Join(out, "ts")},
 		{LocalCatalog: root, Input: userInput(t, root), Out: out, KeepSpecsDir: filepath.Join(root, "kept")},
 		{LocalCatalog: root, Input: userInput(t, root), Out: out, ReceiptsDir: filepath.Join(parent, "ev"), KeepSpecsDir: filepath.Join(parent, "ev", "k")},
+		{LocalCatalog: root, Input: userInput(t, root), Out: filepath.Join(root, "sdk")},
 	}
 	for _, options := range cases {
 		_, err := runRecipe(options)
