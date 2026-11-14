@@ -92,10 +92,47 @@ type specRunOptions struct {
 
 func specRunCommand() *cobra.Command {
 	var options specRunOptions
+	var recipe recipeRunOptions
 	cmd := &cobra.Command{
-		Use:   "run",
-		Short: "Discover and execute a SPEC route using declared implementations",
+		Use:   "run [recipe]",
+		Short: "Run a recipe on one input file, or execute a SPEC route from a catalog",
+		Long: `Run a recipe by name (fetched from kalo-plugins releases, verified and cached):
+
+  kalo spec run openapi-sdk --input ./openapi.yaml --out ./sdk
+
+Or execute one SPEC route from a local catalog and keep values and Receipts:
+
+  kalo spec run --catalog descriptors --from A --to B --input value.json --output run1`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 || recipe.LocalCatalog != "" {
+				if options.CatalogPath != "" || options.From != "" || options.To != "" || cmd.Flags().Changed("output") {
+					return fmt.Errorf("a recipe run takes --input and --out; --catalog, --from, --to and --output belong to a route run")
+				}
+				if options.Input == "" || recipe.Out == "" {
+					return fmt.Errorf("a recipe run needs --input <file> and --out <dir>")
+				}
+				if len(args) == 1 {
+					recipe.Name = args[0]
+				}
+				recipe.Input, recipe.Run, recipe.Log = options.Input, options, cmd.ErrOrStderr()
+				result, err := runRecipe(recipe)
+				if err != nil {
+					return err
+				}
+				for _, output := range result.Outputs {
+					fmt.Fprintf(cmd.OutOrStdout(), "wrote %s (%d files)\n", filepath.Join(result.Out, output.Dir), len(output.Files))
+				}
+				return nil
+			}
+			if recipe.Out != "" || recipe.Force || recipe.Version != "" || recipe.ReceiptsDir != "" || recipe.KeepSpecsDir != "" {
+				return fmt.Errorf("--out, --force, --recipe-version, --receipts and --keep-specs need a recipe name")
+			}
+			for flag, value := range map[string]string{"--catalog": options.CatalogPath, "--from": options.From, "--to": options.To, "--input": options.Input} {
+				if value == "" {
+					return fmt.Errorf("a route run needs %s (or give a recipe name)", flag)
+				}
+			}
 			result, err := runSPEC(options)
 			if err != nil {
 				return err
@@ -103,18 +140,20 @@ func specRunCommand() *cobra.Command {
 			return writeJSON(cmd, result)
 		},
 	}
-	cmd.Flags().StringVar(&options.CatalogPath, "catalog", "", "Path containing SPEC descriptors")
-	cmd.Flags().StringVar(&options.From, "from", "", "Source Contract or Representation Binding address")
-	cmd.Flags().StringVar(&options.To, "to", "", "Target Contract or Representation Binding address")
-	cmd.Flags().StringVar(&options.Input, "input", "", "Input value file")
-	cmd.Flags().StringVar(&options.Output, "output", "spec-output", "New directory for values and Receipts")
+	cmd.Flags().StringVar(&options.CatalogPath, "catalog", "", "Route run: path containing SPEC descriptors")
+	cmd.Flags().StringVar(&options.From, "from", "", "Route run: source Contract or Representation Binding address")
+	cmd.Flags().StringVar(&options.To, "to", "", "Route run: target Contract or Representation Binding address")
+	cmd.Flags().StringVar(&options.Input, "input", "", "Input file")
+	cmd.Flags().StringVar(&options.Output, "output", "spec-output", "Route run: new directory for values and Receipts")
+	cmd.Flags().StringVar(&recipe.Out, "out", "", "Recipe run: directory for the generated files (one folder per recipe output)")
+	cmd.Flags().BoolVar(&recipe.Force, "force", false, "Recipe run: replace the recipe's output folders in a non-empty --out")
+	cmd.Flags().StringVar(&recipe.Version, "recipe-version", "", "Recipe run: recipe version (default: latest published)")
+	cmd.Flags().StringVar(&recipe.LocalCatalog, "recipe-dir", "", "Recipe run: use a recipe folder on disk instead of fetching one")
+	cmd.Flags().StringVar(&recipe.ReceiptsDir, "receipts", "", "Recipe run: also write SPEC Receipts into this new directory")
+	cmd.Flags().StringVar(&recipe.KeepSpecsDir, "keep-specs", "", "Recipe run: keep the catalog, intermediate values and Receipts in this new directory, with a README to rerun")
 	cmd.Flags().BoolVar(&options.AllowUnsafe, "allow-unsafe", false, "Authorize Processors declaring safe: false")
 	cmd.Flags().BoolVar(&options.AllowOpenWorld, "allow-open-world", false, "Authorize Processors declaring open_world: true")
 	addExecutionPolicyFlags(cmd, &options.Policy)
-	_ = cmd.MarkFlagRequired("catalog")
-	_ = cmd.MarkFlagRequired("from")
-	_ = cmd.MarkFlagRequired("to")
-	_ = cmd.MarkFlagRequired("input")
 	return cmd
 }
 
@@ -289,7 +328,7 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		}
 		outputBinding := catalog.Bindings[step.OutputBinding]
 		packFileSet := pluginIO != nil && pluginIO.Output.Pack == "fileset"
-		if packFileSet != (outputBinding.MediaType == specv0.MediaTypeFileSet) {
+		if packFileSet != specv0.IsFileSetMediaType(outputBinding.MediaType) {
 			return nil, fmt.Errorf("Processor %s: implementation %s output.pack=fileset requires output binding %s to have media_type %s, and the other way round", step.ProcessorAddress, step.ImplementationID, step.OutputBinding, specv0.MediaTypeFileSet)
 		}
 		stageDir := filepath.Join(workDir, fmt.Sprintf("%02d-%s", index+1, safePathPart(step.ProcessorAddress)))

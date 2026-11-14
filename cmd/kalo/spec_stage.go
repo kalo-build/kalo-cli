@@ -14,7 +14,7 @@ import (
 // A file-set value is unpacked; any other value is copied as one file, named
 // by KALO:PLUGIN-IO input.filename when the implementation declares one.
 func stageInputValue(valuePath string, binding *specv0.Binding, pluginIO *specv0.PluginIO, inputDir string) error {
-	if binding != nil && binding.MediaType == specv0.MediaTypeFileSet {
+	if binding != nil && specv0.IsFileSetMediaType(binding.MediaType) {
 		data, err := os.ReadFile(valuePath)
 		if err != nil {
 			return err
@@ -32,12 +32,16 @@ func stageInputValue(valuePath string, binding *specv0.Binding, pluginIO *specv0
 // packStageOutput packs everything a plugin wrote below outputDir into one
 // file-set value at target.
 func packStageOutput(outputDir, target string) (string, error) {
-	data, err := specv0.PackDir(outputDir)
+	set, err := specv0.PackDirSet(outputDir)
 	if err != nil {
 		return "", err
 	}
-	if string(data) == "{\n  \"files\": []\n}\n" {
+	if len(set.Files) == 0 {
 		return "", fmt.Errorf("plugin wrote no files")
+	}
+	data, err := specv0.MarshalFileSet(set)
+	if err != nil {
+		return "", err
 	}
 	if err := os.WriteFile(target, data, 0o644); err != nil {
 		return "", err
