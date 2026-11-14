@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 shared definitions",
+  "$defs": {
+    "specVersion": {
+      "type": "string",
+      "pattern": "^0\\.[0-9]+(?:\\.[0-9]+)?(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "namespaceAlias": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9-]{0,62}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9][A-Za-z0-9.-]*$"
+    },
+    "resourceAddress": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9-]{0,62}:[A-Z][A-Z0-9-]{0,127}@[0-9][A-Za-z0-9.-]*$"
+    },
+    "bindingAddress": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9-]{0,62}:[A-Z][A-Z0-9-]{0,127}@[0-9][A-Za-z0-9.-]*:[A-Z][A-Z0-9-]{0,127}@[0-9][A-Za-z0-9.-]*$"
+    },
+    "extensionKey": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9-]{0,62}:[A-Z][A-Z0-9-]{0,127}$"
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/extensionKey"
+      },
+      "additionalProperties": true
+    },
+    "requiredExtensions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extensionKey"
+      },
+      "uniqueItems": true
+    },
+    "definition": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["body"]
+        },
+        {
+          "required": ["ref"]
+        }
+      ],
+      "dependentRequired": {
+        "digest": ["ref"]
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["ref"],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "contractRef": {
+      "type": "object",
+      "required": ["contract"],
+      "properties": {
+        "contract": {
+          "$ref": "#/$defs/resourceAddress"
+        },
+        "version_id": {
+          "$ref": "#/$defs/uuid"
+        }
+      },
+      "additionalProperties": false
+    },
+    "processorPort": {
+      "type": "object",
+      "required": ["name", "contract"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "contract": {
+          "$ref": "#/$defs/resourceAddress"
+        },
+        "contract_version_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/bindingAddress"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "statePort": {
+      "type": "object",
+      "required": ["name", "contract", "access"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "contract": {
+          "$ref": "#/$defs/resourceAddress"
+        },
+        "contract_version_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "access": {
+          "enum": ["read", "write", "read-write", "append", "delete"]
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["node", "port"],
+      "properties": {
+        "node": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "port": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "receiptArtifact": {
+      "type": "object",
+      "required": ["port", "contract", "contract_version_id", "artifact_digest"],
+      "properties": {
+        "port": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "contract": {
+          "$ref": "#/$defs/resourceAddress"
+        },
+        "contract_version_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "binding": {
+          "$ref": "#/$defs/bindingAddress"
+        },
+        "binding_version_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "artifact_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "system": {"type": "string", "minLength": 1},
+            "resource": {"type": "string", "minLength": 1},
+            "version": {"type": "string", "minLength": 1},
+            "digest": {"$ref": "#/$defs/digest"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

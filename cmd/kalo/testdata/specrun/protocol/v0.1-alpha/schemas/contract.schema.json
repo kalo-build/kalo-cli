@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 Contract descriptor",
+  "type": "object",
+  "required": [
+    "spec",
+    "kind",
+    "address",
+    "namespace_id",
+    "family_id",
+    "version_id",
+    "version",
+    "definition"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "spec": {"$ref": "base.schema.json#/$defs/specVersion"},
+    "kind": {"const": "Contract"},
+    "address": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+    "namespace_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "family_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "version": {"$ref": "base.schema.json#/$defs/version"},
+    "description": {"type": "string"},
+    "definition": {"$ref": "base.schema.json#/$defs/definition"},
+    "bindings": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/bindingAddress"},
+      "uniqueItems": true
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/contractRef"},
+      "uniqueItems": true
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["relation", "target"],
+        "properties": {
+          "relation": {
+            "enum": [
+              "equivalent-to",
+              "compatible-with",
+              "extends",
+              "specializes",
+              "supersedes",
+              "derived-from"
+            ]
+          },
+          "target": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+          "target_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+          "direction": {"enum": ["forward", "both"], "default": "forward"},
+          "description": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "conformance": {
+      "type": "object",
+      "properties": {
+        "examples": {"type": "array", "items": {"type": "string"}},
+        "fixtures": {"type": "array", "items": {"type": "string"}},
+        "test_vectors": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "extensions": {"$ref": "base.schema.json#/$defs/extensions"},
+    "required_extensions": {"$ref": "base.schema.json#/$defs/requiredExtensions"}
+  },
+  "additionalProperties": false
+}

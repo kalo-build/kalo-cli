@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 Representation Binding descriptor",
+  "type": "object",
+  "required": [
+    "spec",
+    "kind",
+    "address",
+    "parent",
+    "namespace_id",
+    "family_id",
+    "version_id",
+    "binding_id",
+    "binding_version_id",
+    "binding",
+    "binding_version",
+    "representation"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "spec": {"$ref": "base.schema.json#/$defs/specVersion"},
+    "kind": {"const": "RepresentationBinding"},
+    "address": {"$ref": "base.schema.json#/$defs/bindingAddress"},
+    "parent": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+    "namespace_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "family_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "binding_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "binding_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "binding": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9-]{0,127}$"
+    },
+    "binding_version": {"$ref": "base.schema.json#/$defs/version"},
+    "media_type": {"type": "string", "minLength": 1},
+    "syntax_version": {"type": "string", "minLength": 1},
+    "representation": {
+      "type": "object",
+      "required": ["standard"],
+      "properties": {
+        "standard": {"type": "string", "minLength": 1},
+        "artifact": {"$ref": "base.schema.json#/$defs/artifact"},
+        "inline": {}
+      },
+      "anyOf": [
+        {"required": ["artifact"]},
+        {"required": ["inline"]}
+      ],
+      "additionalProperties": false
+    },
+    "extensions": {"$ref": "base.schema.json#/$defs/extensions"},
+    "required_extensions": {"$ref": "base.schema.json#/$defs/requiredExtensions"}
+  },
+  "additionalProperties": false
+}
