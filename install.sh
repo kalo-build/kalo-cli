@@ -125,11 +125,23 @@ main() {
     info "Kalo CLI installed successfully!"
     info "Run 'kalo --help' to get started"
     
-    # Verify installation
-    if command -v kalo >/dev/null 2>&1; then
-        kalo --version
-    else
-        warn "kalo is not in PATH. Add $INSTALL_DIR to your PATH."
+    # Verify the binary we just installed, not whichever kalo comes first in PATH
+    "$INSTALL_DIR/$BINARY_NAME" --version
+
+    FOUND=$(command -v "$BINARY_NAME" 2>/dev/null || true)
+    case ":$PATH:" in
+        *":$INSTALL_DIR:"*) ON_PATH=1 ;;
+        *) ON_PATH=0 ;;
+    esac
+    if [ "$ON_PATH" -eq 0 ]; then
+        warn "$INSTALL_DIR is not in your PATH. Run this, then use kalo:"
+        warn "  export PATH=\"$INSTALL_DIR:\$PATH\""
+    fi
+    if [ -n "$FOUND" ] && [ "$FOUND" != "$INSTALL_DIR/$BINARY_NAME" ]; then
+        warn "'kalo' currently runs $FOUND, not the version installed here."
+        if [ "$ON_PATH" -eq 1 ]; then
+            warn "Put $INSTALL_DIR before $(dirname "$FOUND") in your PATH, or remove $FOUND."
+        fi
     fi
 }
 
