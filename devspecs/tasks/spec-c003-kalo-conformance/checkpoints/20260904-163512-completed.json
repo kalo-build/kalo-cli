@@ -1,0 +1,102 @@
+{
+  "schema_version": 3,
+  "event_kind": "task_checkpoint",
+  "checkpoint_id": "cp_20260904T163512Z_b01_completed",
+  "task_id": "spec-c003-kalo-conformance",
+  "target": "B01",
+  "series": "B",
+  "query": "Add Kalo test adapter hooks for the SPEC v0.1-alpha conformance suite",
+  "slice": "B01",
+  "slice_title": "Exercise canonical vectors and preservation behavior",
+  "parent_slice": "B01",
+  "stage": "completed",
+  "decision": "complete",
+  "created_at": "2026-09-04T16:35:12Z",
+  "goal": "Expose test-only Kalo hooks for the canonical conformance suite",
+  "description": "Added external-vector tests for every canonical symbolic address, unknown optional-extension round-trip preservation, and exact-byte digest mismatch rejection. Production CLI/runtime code and protocol surface remain unchanged.",
+  "resources": [
+    "../B00-index.md",
+    "../B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+    "../B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+    "../task.json"
+  ],
+  "files_edited": [
+    "devspecs/tasks/spec-c003-kalo-conformance/B00-index.md",
+    "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+    "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+    "devspecs/tasks/spec-c003-kalo-conformance/task.json",
+    "internal/specv0/conformance_test.go"
+  ],
+  "tests_run": [
+    "SPEC_CONFORMANCE_ROOT=\u003cspec\u003e go test ./internal/specv0 -run TestConformance -v",
+    "SPEC_CONFORMANCE_ROOT=\u003cspec\u003e go test ./...",
+    "go vet ./..."
+  ],
+  "missed_files": [
+    "internal/specv0/conformance_test.go"
+  ],
+  "tasks": [
+    "canonical address vectors:done",
+    "optional extension preservation:done",
+    "digest mismatch rejection:done"
+  ],
+  "actual_context": {
+    "files_edited": [
+      "devspecs/tasks/spec-c003-kalo-conformance/B00-index.md",
+      "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+      "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+      "devspecs/tasks/spec-c003-kalo-conformance/task.json",
+      "internal/specv0/conformance_test.go"
+    ],
+    "tests_run": [
+      "SPEC_CONFORMANCE_ROOT=\u003cspec\u003e go test ./internal/specv0 -run TestConformance -v",
+      "SPEC_CONFORMANCE_ROOT=\u003cspec\u003e go test ./...",
+      "go vet ./..."
+    ]
+  },
+  "predicted_context_feedback": {
+    "critical_missed": [
+      "internal/specv0/conformance_test.go"
+    ]
+  },
+  "evidence": {
+    "git_diff": {
+      "command": "git status --short --untracked-files=all; git diff --stat; git diff --name-only; git diff --cached --name-only; git ls-files --others --exclude-standard",
+      "status": "?? devspecs/tasks/spec-c003-kalo-conformance/B00-index.md\n?? devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-plan.md\n?? devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-result.md\n?? devspecs/tasks/spec-c003-kalo-conformance/task.json\n?? internal/specv0/conformance_test.go\n",
+      "changed_files": [
+        "devspecs/tasks/spec-c003-kalo-conformance/B00-index.md",
+        "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+        "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+        "devspecs/tasks/spec-c003-kalo-conformance/task.json",
+        "internal/specv0/conformance_test.go"
+      ],
+      "max_bytes": 12000,
+      "truncated": false
+    },
+    "git_diff_paths": [
+      "devspecs/tasks/spec-c003-kalo-conformance/B00-index.md",
+      "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+      "devspecs/tasks/spec-c003-kalo-conformance/B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+      "devspecs/tasks/spec-c003-kalo-conformance/task.json",
+      "internal/specv0/conformance_test.go"
+    ],
+    "plan_refs": [
+      "../B00-index.md",
+      "../B01-exercise-canonical-vectors-and-preservation-beha-plan.md",
+      "../B01-exercise-canonical-vectors-and-preservation-beha-result.md",
+      "../task.json"
+    ]
+  },
+  "learnings": [
+    {
+      "learning_type": "scope",
+      "summary": "Kalo can consume canonical vectors through test-only hooks without vendoring SPEC or adding CLI surface",
+      "evidence_refs": [
+        "internal/specv0/conformance_test.go"
+      ],
+      "applies_to": "SPEC-C003",
+      "confidence": "high"
+    }
+  ],
+  "next": {}
+}

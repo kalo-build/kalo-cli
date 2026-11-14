@@ -1,0 +1,12 @@
+$schema: ../../protocol/v0.1-alpha/schemas/namespace.schema.json
+spec: "0.1-alpha"
+kind: Namespace
+alias: KALOX
+namespace_id: 11111111-1111-4111-8111-111111111111
+description: Test namespace for kalo spec run fixtures.
+authority:
+  name: Kalo Software GmbH test fixture
+  proof: https://github.com/kalo-build/kalo-plugins
+resolver_hints:
+  - mechanism: filesystem
+    ref: ../

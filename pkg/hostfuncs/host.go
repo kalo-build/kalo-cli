@@ -24,12 +24,30 @@ const (
 // It is responsible for registering all host functions with the "kalo" module.
 type KaloHost struct {
 	connections map[uint32]*pgxpool.Pool
+	now         func() int64
+}
+
+// HostOptions controls capabilities that must be stable across plugin runs.
+type HostOptions struct {
+	// Deterministic replaces wall-clock access with a stable zero timestamp.
+	Deterministic bool
 }
 
 // NewKaloHost creates a new KaloHost instance.
 func NewKaloHost() *KaloHost {
+	return NewKaloHostWithOptions(HostOptions{})
+}
+
+// NewKaloHostWithOptions creates a KaloHost with explicit runtime behavior.
+func NewKaloHostWithOptions(options HostOptions) *KaloHost {
+	now := wallClockNow
+	if options.Deterministic {
+		now = deterministicNow
+	}
+
 	return &KaloHost{
 		connections: make(map[uint32]*pgxpool.Pool),
+		now:         now,
 	}
 }
 
@@ -62,7 +80,7 @@ func (h *KaloHost) Register(ctx context.Context, r wazero.Runtime) error {
 		Export("db_query").
 		// System capability functions
 		NewFunctionBuilder().
-		WithFunc(systemNow).
+		WithFunc(h.systemNow).
 		WithResultNames("unix_nanos").
 		Export("system_now").
 		Instantiate(ctx)

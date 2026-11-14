@@ -1,0 +1,13 @@
+$schema: ../../protocol/v0.1-alpha/schemas/contract.schema.json
+spec: "0.1-alpha"
+kind: Contract
+address: KALOX:OPENAPI@1
+namespace_id: 11111111-1111-4111-8111-111111111111
+family_id: aaaaaaaa-0000-4000-8000-000000000001
+version_id: aaaaaaaa-0000-4000-8000-000000000002
+version: "1"
+description: An OpenAPI document (YAML).
+definition:
+  body: An OpenAPI document (YAML).
+bindings:
+  - KALOX:OPENAPI@1:JSON@1

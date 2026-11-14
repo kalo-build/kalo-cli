@@ -1,0 +1,189 @@
+{
+  "task_id": "spec-c001-kalo-cli",
+  "series": "A",
+  "profile": "code-change",
+  "workspace_id": "spec-pdpp-kalo-evidence",
+  "workspace_root": "C:\\Users\\brenn\\go\\src\\github.com\\kalo-build\\spec-pdpp-kalo-evidence",
+  "parent_change": "SPEC-C001",
+  "repo_alias": "kalo-cli",
+  "query": "Implement native SPEC validate route run and receipts for workspace change SPEC-C001: SPEC v0.1-alpha external review polish",
+  "status": "packed",
+  "created_at": "2026-09-03T14:18:29Z",
+  "updated_at": "2026-09-03T14:26:17Z",
+  "repo_root": "C:\\Users\\brenn\\go\\src\\github.com\\kalo-build\\kalo-cli",
+  "workspace": "C:/Users/brenn/go/src/github.com/kalo-build/kalo-cli/devspecs/tasks/spec-c001-kalo-cli",
+  "artifacts": {
+    "series": "A",
+    "index": "A00-index.md",
+    "first_slice": "A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+    "result": "A01-implement-native-spec-validate-route-run-and-rec-result.md",
+    "slices": [
+      {
+        "id": "A01",
+        "title": "Implement native SPEC validate route run and receipts",
+        "plan": "A01-implement-native-spec-validate-route-run-and-rec-plan.md",
+        "result": "A01-implement-native-spec-validate-route-run-and-rec-result.md",
+        "kind": "slice",
+        "stage": "validated",
+        "decision": "promote",
+        "updated_at": "2026-09-03T14:25:28Z",
+        "latest_checkpoint_id": "cp_20260903T142528Z_a01_validated",
+        "latest_checkpoint": "checkpoints/20260903-142528-validated.md",
+        "latest_checkpoint_json": "checkpoints/20260903-142528-validated.json"
+      }
+    ]
+  },
+  "predicted_context": {
+    "relevant_areas": [
+      "cmd/kalo",
+      "internal/specv0"
+    ],
+    "primary_files": [
+      {
+        "path": "cmd/kalo/spec.go",
+        "title": "cmd/kalo/spec.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "pack tier: related (explicit exact plan/track ID reference)",
+          "exact intent ID: explicit body reference",
+          "anchor-first ranking: score 24.000; matches spec, validate, route, v01alpha; fields path, title, symbol, body",
+          "query term match in path: spec"
+        ]
+      },
+      {
+        "path": "internal/specv0/route.go",
+        "title": "internal/specv0/route.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "anchor-first ranking: score 24.000; matches route; fields path, title, symbol, body",
+          "query term match in path: route",
+          "query term match in path: spec"
+        ]
+      },
+      {
+        "path": "internal/specv0/catalog.go",
+        "title": "internal/specv0/catalog.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: spec",
+          "query term match in body: alpha",
+          "query term match in body: implement"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main.go",
+        "title": "cmd/kalo/main.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in body: alpha",
+          "query term match in body: change",
+          "authority prior: stale or superseded"
+        ]
+      }
+    ],
+    "tests": [
+      {
+        "path": "cmd/kalo/main_test.go#L23",
+        "title": "TestCLI_RunHelp",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in title: run"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main_test.go#L46",
+        "title": "TestRunTargetRejectsImpossibleMemoryLimitBeforeReadingProject",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in title: run"
+        ]
+      }
+    ],
+    "docs_plans_config": [
+      {
+        "path": "internal/specv0/model.go",
+        "title": "internal/specv0/model.go (go)",
+        "kind": "source_context",
+        "role": "config_schema",
+        "evidence": [
+          "query term match in path: spec",
+          "query term match in body: implement",
+          "query term match in body: receipts",
+          "authority prior: high classifier confidence"
+        ]
+      }
+    ],
+    "related_git_receipts": [
+      {
+        "sha": "b6323f0642c922b74a06932874c8f0950fc0a351",
+        "short_sha": "b6323f0",
+        "committed_at": "2026-07-23",
+        "subject": "feat(config): add plugin compatibility diagnostics",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/main_test.go"
+        ],
+        "signals": [
+          "touched 2 packed path(s)",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "f7254260a1a267ea05d9a1b895866a64ad291aa1",
+        "short_sha": "f725426",
+        "committed_at": "2026-07-23",
+        "subject": "fix(runtime): enforce restricted plugin execution",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/main_test.go"
+        ],
+        "signals": [
+          "touched 2 packed path(s)",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "3b914d35ecabeb935559fc7b6fdfbacbc9a3d139",
+        "short_sha": "3b914d3",
+        "committed_at": "2026-03-15",
+        "subject": "feat: plugin reuse (aliasing) with pipeline config / store overrides, refactor + basic test coverage",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/main_test.go"
+        ],
+        "signals": [
+          "touched 2 packed path(s)",
+          "cross-file change"
+        ]
+      }
+    ]
+  },
+  "confidence": {
+    "primary_file_confidence": "high",
+    "test_coverage_confidence": "high",
+    "docs_config_confidence": "medium",
+    "git_receipt_confidence": "high",
+    "noise_risk": "low",
+    "pack_completeness": "high",
+    "why": [
+      "found 4 likely primary file(s)",
+      "found 2 likely test file(s)",
+      "found 3 related Git receipt(s)"
+    ],
+    "agent_instruction": "Validate the test and integration surface before editing. Record critical misses and distracting inclusions in the slice result or a task checkpoint."
+  },
+  "durability": {
+    "required": true
+  }
+}

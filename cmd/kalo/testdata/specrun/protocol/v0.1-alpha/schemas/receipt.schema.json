@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 Receipt descriptor",
+  "type": "object",
+  "required": [
+    "spec",
+    "kind",
+    "receipt_id",
+    "execution_id",
+    "subject",
+    "status",
+    "started_at",
+    "ended_at",
+    "inputs",
+    "outputs"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "spec": {"$ref": "base.schema.json#/$defs/specVersion"},
+    "kind": {"const": "Receipt"},
+    "receipt_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "execution_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "subject": {
+      "type": "object",
+      "properties": {
+        "processor": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+        "processor_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+        "implementation_id": {"$ref": "base.schema.json#/$defs/uuid"},
+        "implementation_digest": {"$ref": "base.schema.json#/$defs/digest"},
+        "composition": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+        "composition_version_id": {"$ref": "base.schema.json#/$defs/uuid"}
+      },
+      "oneOf": [
+        {"required": ["processor", "processor_version_id"]},
+        {"required": ["composition", "composition_version_id"]}
+      ],
+      "additionalProperties": false
+    },
+    "status": {"enum": ["succeeded", "failed", "partial", "cancelled"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "ended_at": {"type": "string", "format": "date-time"},
+    "inputs": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/receiptArtifact"}
+    },
+    "outputs": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/receiptArtifact"}
+    },
+    "state": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["port", "contract", "access"],
+        "properties": {
+          "port": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "contract": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+          "access": {"enum": ["read", "write", "read-write", "append", "delete"]},
+          "before_digest": {"$ref": "base.schema.json#/$defs/digest"},
+          "after_digest": {"$ref": "base.schema.json#/$defs/digest"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "route": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node", "processor", "processor_version_id"],
+        "properties": {
+          "node": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "processor": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+          "processor_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+          "receipt_id": {"$ref": "base.schema.json#/$defs/uuid"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "parent_receipts": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/uuid"},
+      "uniqueItems": true
+    },
+    "extensions": {"$ref": "base.schema.json#/$defs/extensions"},
+    "required_extensions": {"$ref": "base.schema.json#/$defs/requiredExtensions"}
+  },
+  "additionalProperties": false
+}

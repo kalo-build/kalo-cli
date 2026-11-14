@@ -138,8 +138,9 @@ func (pd PluginDefinition) PluginIdentity(aliasKey string) string {
 
 // PluginIOSpec represents a plugin's input or output specification
 type PluginIOSpec struct {
-	Format string `yaml:"format"`
-	Store  string `yaml:"store"`
+	Format  string `yaml:"format"`
+	Version string `yaml:"version,omitempty"`
+	Store   string `yaml:"store"`
 }
 
 // ResolvePipeline looks up a pipeline by name or alias.
@@ -180,6 +181,9 @@ func ApplyStepOverrides(pluginDef PluginDefinition, step StepSpec) PluginDefinit
 			if step.Input.Format != "" {
 				merged.Format = step.Input.Format
 			}
+			if step.Input.Version != "" {
+				merged.Version = step.Input.Version
+			}
 			result.Input = &merged
 		}
 	}
@@ -201,6 +205,9 @@ func ApplyStepOverrides(pluginDef PluginDefinition, step StepSpec) PluginDefinit
 			}
 			if step.Output.Format != "" {
 				merged.Format = step.Output.Format
+			}
+			if step.Output.Version != "" {
+				merged.Version = step.Output.Version
 			}
 			result.Output = &merged
 		}

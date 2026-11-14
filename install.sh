@@ -2,6 +2,7 @@
 # Kalo CLI Installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/kalo-build/kalo-cli/main/install.sh | sh
 #    or: wget -qO- https://raw.githubusercontent.com/kalo-build/kalo-cli/main/install.sh | sh
+# Pin a version (e.g. a preview build): curl -fsSL .../install.sh | KALO_VERSION=v0.2.0-agent.1 sh
 
 set -e
 
@@ -81,12 +82,18 @@ main() {
     ARCH=$(detect_arch)
     info "OS: $OS, Architecture: $ARCH"
 
-    info "Fetching latest version..."
-    VERSION=$(get_latest_version)
-    if [ -z "$VERSION" ]; then
-        error "Could not determine latest version"
+    if [ -n "${KALO_VERSION:-}" ]; then
+        VERSION="$KALO_VERSION"
+        case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
+        info "Requested version: $VERSION"
+    else
+        info "Fetching latest version..."
+        VERSION=$(get_latest_version)
+        if [ -z "$VERSION" ]; then
+            error "Could not determine latest version"
+        fi
+        info "Latest version: $VERSION"
     fi
-    info "Latest version: $VERSION"
 
     # Construct download URL
     VERSION_NUM="${VERSION#v}"
@@ -103,6 +110,9 @@ main() {
     tar -xzf "$TMP_DIR/$FILENAME" -C "$TMP_DIR"
 
     info "Installing to $INSTALL_DIR..."
+    if [ ! -d "$INSTALL_DIR" ]; then
+        mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"
+    fi
     if [ -w "$INSTALL_DIR" ]; then
         mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
