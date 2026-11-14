@@ -88,6 +88,9 @@ type specRunOptions struct {
 	AllowUnsafe    bool
 	AllowOpenWorld bool
 	Policy         executionPolicy
+	// QuietPluginOutput keeps plugin stdout/stderr off our stderr (recipe runs
+	// without --verbose); the tail is still kept for error messages.
+	QuietPluginOutput bool
 }
 
 func specRunCommand() *cobra.Command {
@@ -107,6 +110,10 @@ Or execute one SPEC route from a local catalog and keep values and Receipts:
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hostVerbose = verbose
+			// Past flag parsing, an error is about the run, not the usage.
+			cmd.SilenceUsage = true
+			// main prints the error once; cobra would print it a second time.
+			cmd.SilenceErrors = true
 			if len(args) == 1 || recipe.LocalCatalog != "" {
 				if options.CatalogPath != "" || options.From != "" || options.To != "" || cmd.Flags().Changed("output") {
 					return fmt.Errorf("a recipe run takes --input and --out; --catalog, --from, --to and --output belong to a route run")
@@ -118,6 +125,7 @@ Or execute one SPEC route from a local catalog and keep values and Receipts:
 					recipe.Name = args[0]
 				}
 				recipe.Input, recipe.Run = options.Input, options
+				recipe.Run.QuietPluginOutput = !verbose
 				if verbose {
 					recipe.Log = cmd.ErrOrStderr()
 				}
@@ -288,10 +296,11 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		return nil, err
 	}
 
-	ctx := context.Background()
+	ctx := withReservedLinearMemory(context.Background())
 	runtimeConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(options.Policy.PluginTimeout > 0)
-	if options.Policy.PluginMemoryMiB > 0 {
-		runtimeConfig = runtimeConfig.WithMemoryLimitPages(options.Policy.PluginMemoryMiB * 16)
+	memoryLimit := pluginMemoryLimit(options.Policy.PluginMemoryMiB)
+	if memoryLimit.MiB > 0 {
+		runtimeConfig = runtimeConfig.WithMemoryLimitPages(memoryLimit.MiB * 16)
 	}
 	wasmRuntime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer wasmRuntime.Close(ctx)
@@ -375,6 +384,9 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		// Plugin stdout and stderr go to our stderr so stdout stays the JSON
 		// result; the tail is repeated in the error so a failure is explained.
 		pluginLog := &tailWriter{dst: os.Stderr, max: 4096}
+		if options.QuietPluginOutput {
+			pluginLog.dst = nil
+		}
 		stagePolicy.PluginOutput = pluginLog
 		err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
 		cancel()
@@ -382,6 +394,9 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 			return nil, fmt.Errorf("Processor %s exceeded timeout %s", step.ProcessorAddress, options.Policy.PluginTimeout)
 		}
 		if err != nil {
+			if pluginOutOfMemory(err, pluginLog.Head()+pluginLog.Tail()) {
+				return nil, outOfMemoryError(step.ProcessorAddress, inputPath, inputInfo.Size(), memoryLimit, options.QuietPluginOutput)
+			}
 			if tail := pluginLog.Tail(); tail != "" {
 				return nil, fmt.Errorf("Processor %s implementation %s failed: %w\nplugin output (last %d bytes):\n%s", step.ProcessorAddress, step.ImplementationID, err, len(tail), tail)
 			}

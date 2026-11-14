@@ -51,14 +51,20 @@ func packStageOutput(outputDir, target string) (string, error) {
 
 // tailWriter forwards everything to dst and keeps the last max bytes.
 type tailWriter struct {
-	dst io.Writer
-	max int
-	mu  sync.Mutex
-	buf []byte
+	dst  io.Writer
+	max  int
+	mu   sync.Mutex
+	buf  []byte
+	head []byte // first headMax bytes: runtimes print the cause before a long dump
 }
+
+const headMax = 1024
 
 func (w *tailWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
+	if room := headMax - len(w.head); room > 0 {
+		w.head = append(w.head, p[:min(room, len(p))]...)
+	}
 	w.buf = append(w.buf, p...)
 	if len(w.buf) > w.max {
 		w.buf = append([]byte(nil), w.buf[len(w.buf)-w.max:]...)
@@ -68,6 +74,12 @@ func (w *tailWriter) Write(p []byte) (int, error) {
 		_, _ = w.dst.Write(p)
 	}
 	return len(p), nil
+}
+
+func (w *tailWriter) Head() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return string(w.head)
 }
 
 func (w *tailWriter) Tail() string {

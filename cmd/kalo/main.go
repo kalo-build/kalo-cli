@@ -440,7 +440,7 @@ func runTarget(target string, policy executionPolicy) error {
 		}
 	}
 
-	ctx := context.Background()
+	ctx := withReservedLinearMemory(context.Background())
 	runtimeConfig := wazero.NewRuntimeConfig().
 		WithCloseOnContextDone(policy.PluginTimeout > 0)
 	if policy.PluginMemoryMiB > 0 {
