@@ -75,3 +75,24 @@ func TestTailWriterKeepsCauseBeforeLongDump(t *testing.T) {
 		t.Fatal("the cause at the start of a long dump must still be recognised")
 	}
 }
+
+func TestDefaultMemoryLimitIsReadOncePerProcess(t *testing.T) {
+	first := pluginMemoryLimit(0)
+	second := pluginMemoryLimit(0)
+	if first != second {
+		t.Fatalf("pluginMemoryLimit(0) changed between calls: %+v then %+v", first, second)
+	}
+}
+
+func TestMemoryLimitFromMeminfo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "meminfo")
+	if err := os.WriteFile(path, []byte("MemTotal:        2018304 kB\nMemAvailable:    1126400 kB\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := memoryLimitFromMeminfo(path); got.MiB != 1100-hostBaselineMiB || got.Source != "free memory" {
+		t.Fatalf("memoryLimitFromMeminfo = %+v; want %d MiB from free memory", got, 1100-hostBaselineMiB)
+	}
+	if got := memoryLimitFromMeminfo(filepath.Join(t.TempDir(), "missing")); got.MiB != 0 {
+		t.Fatalf("missing meminfo: %+v; want no limit", got)
+	}
+}

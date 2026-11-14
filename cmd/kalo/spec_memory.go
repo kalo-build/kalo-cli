@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // hostBaselineMiB is what the host needs next to plugin linear memory: the
@@ -30,7 +31,20 @@ func pluginMemoryLimit(flagMiB uint32) memoryLimit {
 	if flagMiB > 0 {
 		return memoryLimit{MiB: flagMiB, Source: "--plugin-memory-mib"}
 	}
-	available, ok := memAvailableMiB("/proc/meminfo")
+	return defaultMemoryLimit()
+}
+
+// defaultMemoryLimit reads MemAvailable once per process. A recipe runs one
+// route per output in the same process; after the first route the Go heap
+// keeps the pages it used, so a later reading counts the host twice and the
+// second plugin got a smaller cap (Plaid: 310 MiB for the Go generator on a
+// 2 GB machine, task hq-20). The first reading already reserves the baseline.
+var defaultMemoryLimit = sync.OnceValue(func() memoryLimit {
+	return memoryLimitFromMeminfo("/proc/meminfo")
+})
+
+func memoryLimitFromMeminfo(path string) memoryLimit {
+	available, ok := memAvailableMiB(path)
 	if !ok {
 		return memoryLimit{}
 	}
