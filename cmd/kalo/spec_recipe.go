@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +33,9 @@ const (
 	recipeFileName            = "recipe.yaml"
 	maxRecipeArchiveBytes     = 256 << 20
 	maxRecipeFileBytes        = 128 << 20
+	maxRecipeExtractBytes     = 512 << 20
+	maxRecipeEntries          = 10000
+	maxReleasePages           = 20
 )
 
 var (
@@ -227,16 +231,28 @@ func resolveRecipe(options recipeRunOptions) (string, error) {
 }
 
 func latestRecipeVersion(client *http.Client, name string) (string, error) {
-	data, err := httpGet(client, envOr("KALO_RECIPE_RELEASES_API", defaultRecipeReleasesAPI), 8<<20)
-	if err != nil {
-		return "", fmt.Errorf("find latest version of recipe %s (or pass --recipe-version): %w", name, err)
-	}
-	var releases []struct {
+	type release struct {
 		TagName string `json:"tag_name"`
 		Draft   bool   `json:"draft"`
 	}
-	if err := json.Unmarshal(data, &releases); err != nil {
-		return "", fmt.Errorf("find latest version of recipe %s: %w", name, err)
+	var releases []release
+	// Follow the API's next-page links: recipes and plugins share one releases list.
+	url := envOr("KALO_RECIPE_RELEASES_API", defaultRecipeReleasesAPI)
+	for page := 0; url != "" && page < maxReleasePages; page++ {
+		data, next, err := httpGetPage(client, url, 8<<20)
+		if err != nil {
+			var status *httpStatusError
+			if errors.As(err, &status) && (status.Code == http.StatusForbidden || status.Code == http.StatusTooManyRequests) {
+				return "", fmt.Errorf("find latest version of recipe %s: GitHub API rate limit reached (%s); pass --recipe-version <version> to skip the lookup", name, status.Status)
+			}
+			return "", fmt.Errorf("find latest version of recipe %s (or pass --recipe-version): %w", name, err)
+		}
+		var pageReleases []release
+		if err := json.Unmarshal(data, &pageReleases); err != nil {
+			return "", fmt.Errorf("find latest version of recipe %s: %w", name, err)
+		}
+		releases = append(releases, pageReleases...)
+		url = next
 	}
 	prefix := "recipe-" + name + "-v"
 	var best *semver.Version
@@ -259,29 +275,49 @@ func latestRecipeVersion(client *http.Client, name string) (string, error) {
 	return best.String(), nil
 }
 
+type httpStatusError struct {
+	URL    string
+	Code   int
+	Status string
+}
+
+func (e *httpStatusError) Error() string { return fmt.Sprintf("GET %s: %s", e.URL, e.Status) }
+
+var nextLinkPattern = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
+
 func httpGet(client *http.Client, url string, limit int64) ([]byte, error) {
+	data, _, err := httpGetPage(client, url, limit)
+	return data, err
+}
+
+// httpGetPage also returns the rel="next" URL of a Link header, if any.
+func httpGetPage(client *http.Client, url string, limit int64) ([]byte, string, error) {
 	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	// Plain GET: no identifiers, nothing about the user is sent (no telemetry).
 	request.Header.Set("User-Agent", "kalo/"+version)
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: %s", url, response.Status)
+		return nil, "", &httpStatusError{URL: url, Code: response.StatusCode, Status: response.Status}
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("GET %s: response larger than %d bytes", url, limit)
+		return nil, "", fmt.Errorf("GET %s: response larger than %d bytes", url, limit)
 	}
-	return data, nil
+	next := ""
+	if match := nextLinkPattern.FindStringSubmatch(response.Header.Get("Link")); match != nil {
+		next = match[1]
+	}
+	return data, next, nil
 }
 
 // extractTarGz writes regular files and directories only; every name must be
@@ -296,13 +332,17 @@ func extractTarGz(archive []byte, root string) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
-	for {
+	var total int64
+	for entries := 1; ; entries++ {
 		header, err := reader.Next()
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if entries > maxRecipeEntries {
+			return fmt.Errorf("archive has more than %d entries", maxRecipeEntries)
 		}
 		name := strings.TrimPrefix(header.Name, "./")
 		if name == "" || name == "." {
@@ -321,6 +361,9 @@ func extractTarGz(archive []byte, root string) error {
 		case tar.TypeReg:
 			if header.Size > maxRecipeFileBytes {
 				return fmt.Errorf("archive entry %q is larger than %d bytes", header.Name, maxRecipeFileBytes)
+			}
+			if total += header.Size; total > maxRecipeExtractBytes {
+				return fmt.Errorf("archive expands to more than %d bytes", maxRecipeExtractBytes)
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
@@ -405,6 +448,9 @@ func runRecipe(options recipeRunOptions) (*recipeRunResult, error) {
 			}
 		}
 	}
+	if err := checkDestinations(recipeRoot, outRoot, manifest, options); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(outRoot), 0o755); err != nil {
 		return nil, err
 	}
@@ -450,7 +496,11 @@ func runRecipe(options recipeRunOptions) (*recipeRunResult, error) {
 				return nil, err
 			}
 		} else {
-			name := strings.SplitN(filepath.Base(finalValue), "-", 2)[1]
+			// Staged values are named "<index>-<name>"; keep <name>.
+			name := filepath.Base(finalValue)
+			if _, rest, found := strings.Cut(name, "-"); found && rest != "" {
+				name = rest
+			}
 			if err := copyFile(finalValue, filepath.Join(dest, name)); err != nil {
 				return nil, err
 			}
@@ -503,10 +553,65 @@ func keepSpecs(dir, recipeRoot string, manifest *recipeManifest, runRoots map[st
 			return err
 		}
 		route := routes[output.Dir]
-		fmt.Fprintf(&readme, "kalo spec run --catalog recipe/%s --from %s --to %s --input runs/%s/artifacts/00-%s --output rerun-%s\n", manifest.Catalog, route[0], route[1], output.Dir, inputName, output.Dir)
+		fmt.Fprintf(&readme, "kalo spec run --catalog %s --from %s --to %s --input %s --output %s\n",
+			shellQuote("recipe/"+manifest.Catalog), shellQuote(route[0]), shellQuote(route[1]),
+			shellQuote("runs/"+output.Dir+"/artifacts/00-"+inputName), shellQuote("rerun-"+output.Dir))
 	}
 	readme.WriteString("```\n\nOr run the whole recipe again: `kalo spec run --recipe-dir recipe --input <file> --out <dir>`.\n")
 	return os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme.String()), 0o644)
+}
+
+// checkDestinations runs before anything is written: the recipe's output
+// folders, --receipts and --keep-specs must not overlap, and evidence must not
+// land inside the recipe folder it copies.
+func checkDestinations(recipeRoot, outRoot string, manifest *recipeManifest, options recipeRunOptions) error {
+	recipeRoot, err := filepath.Abs(recipeRoot)
+	if err != nil {
+		return err
+	}
+	type destination struct{ flag, path string }
+	var destinations []destination
+	for _, output := range manifest.Outputs {
+		destinations = append(destinations, destination{"--out " + output.Dir, filepath.Join(outRoot, output.Dir)})
+	}
+	for flag, dir := range map[string]string{"--receipts": options.ReceiptsDir, "--keep-specs": options.KeepSpecsDir} {
+		if dir == "" {
+			continue
+		}
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		if pathWithin(abs, recipeRoot) || pathWithin(recipeRoot, abs) {
+			return fmt.Errorf("%s %s overlaps the recipe folder %s", flag, dir, recipeRoot)
+		}
+		destinations = append(destinations, destination{flag, abs})
+	}
+	for i := range destinations {
+		for j := i + 1; j < len(destinations); j++ {
+			a, b := destinations[i], destinations[j]
+			if pathWithin(a.path, b.path) || pathWithin(b.path, a.path) {
+				return fmt.Errorf("%s (%s) and %s (%s) overlap; give them separate folders", a.flag, a.path, b.flag, b.path)
+			}
+		}
+	}
+	return nil
+}
+
+// pathWithin reports whether child is parent or below it (both absolute).
+func pathWithin(child, parent string) bool {
+	rel, err := filepath.Rel(parent, child)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// shellQuote quotes s for POSIX shells unless it is plainly safe.
+func shellQuote(s string) string {
+	if s != "" && strings.IndexFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_./:@+=", r))
+	}) < 0 {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func copyTree(source, destination string) error {

@@ -183,3 +183,70 @@ func TestRecipeFetchRejectsBadDigestAndUnsafeArchive(t *testing.T) {
 	_, err = runRecipe(recipeRunOptions{Name: "fixture", Version: "0.1.0", Input: userInput(t, root), Out: filepath.Join(t.TempDir(), "sdk")})
 	require.ErrorContains(t, err, "escapes the recipe folder")
 }
+
+func TestRecipeLatestVersionFollowsPagesAndExplainsRateLimit(t *testing.T) {
+	var server *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			fmt.Fprint(w, `[{"tag_name":"recipe-fixture-v0.3.0"}]`)
+			return
+		}
+		w.Header().Set("Link", fmt.Sprintf(`<%s/releases?page=2>; rel="next", <%s/releases?page=2>; rel="last"`, server.URL, server.URL))
+		fmt.Fprint(w, `[{"tag_name":"plugin-x-v9.0.0"},{"tag_name":"recipe-fixture-v0.2.0"}]`)
+	})
+	mux.HandleFunc("/limited", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate limit exceeded", http.StatusForbidden)
+	})
+	server = httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	t.Setenv("KALO_RECIPE_RELEASES_API", server.URL+"/releases")
+	latest, err := latestRecipeVersion(server.Client(), "fixture")
+	require.NoError(t, err)
+	require.Equal(t, "0.3.0", latest, "a version on page 2 must be found")
+
+	t.Setenv("KALO_RECIPE_RELEASES_API", server.URL+"/limited")
+	_, err = latestRecipeVersion(server.Client(), "fixture")
+	require.ErrorContains(t, err, "rate limit")
+	require.ErrorContains(t, err, "--recipe-version")
+}
+
+func TestRecipeExtractCapsEntries(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for i := 0; i <= maxRecipeEntries; i++ {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: fmt.Sprintf("d%d/", i), Typeflag: tar.TypeDir, Mode: 0o755}))
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	err := extractTarGz(buf.Bytes(), t.TempDir())
+	require.ErrorContains(t, err, "more than")
+}
+
+func TestRecipeRejectsOverlappingDestinationsBeforeWriting(t *testing.T) {
+	root := buildFixtureRecipe(t)
+	parent := t.TempDir()
+	out := filepath.Join(parent, "sdk")
+	cases := []recipeRunOptions{
+		{LocalCatalog: root, Input: userInput(t, root), Out: out, ReceiptsDir: out},
+		{LocalCatalog: root, Input: userInput(t, root), Out: out, KeepSpecsDir: filepath.Join(out, "ts")},
+		{LocalCatalog: root, Input: userInput(t, root), Out: out, KeepSpecsDir: filepath.Join(root, "kept")},
+		{LocalCatalog: root, Input: userInput(t, root), Out: out, ReceiptsDir: filepath.Join(parent, "ev"), KeepSpecsDir: filepath.Join(parent, "ev", "k")},
+	}
+	for _, options := range cases {
+		_, err := runRecipe(options)
+		require.ErrorContains(t, err, "overlap")
+	}
+	entries, err := os.ReadDir(parent)
+	require.NoError(t, err)
+	require.Empty(t, entries, "nothing is written when destinations overlap")
+}
+
+func TestShellQuote(t *testing.T) {
+	require.Equal(t, "runs/ts/artifacts/00-api.yml", shellQuote("runs/ts/artifacts/00-api.yml"))
+	require.Equal(t, "'runs/ts/artifacts/00-my api.yml'", shellQuote("runs/ts/artifacts/00-my api.yml"))
+	require.Equal(t, `'it'\''s;rm'`, shellQuote("it's;rm"))
+	require.Equal(t, "''", shellQuote(""))
+}

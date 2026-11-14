@@ -93,6 +93,7 @@ type specRunOptions struct {
 func specRunCommand() *cobra.Command {
 	var options specRunOptions
 	var recipe recipeRunOptions
+	var verbose bool
 	cmd := &cobra.Command{
 		Use:   "run [recipe]",
 		Short: "Run a recipe on one input file, or execute a SPEC route from a catalog",
@@ -105,6 +106,7 @@ Or execute one SPEC route from a local catalog and keep values and Receipts:
   kalo spec run --catalog descriptors --from A --to B --input value.json --output run1`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			hostVerbose = verbose
 			if len(args) == 1 || recipe.LocalCatalog != "" {
 				if options.CatalogPath != "" || options.From != "" || options.To != "" || cmd.Flags().Changed("output") {
 					return fmt.Errorf("a recipe run takes --input and --out; --catalog, --from, --to and --output belong to a route run")
@@ -115,7 +117,10 @@ Or execute one SPEC route from a local catalog and keep values and Receipts:
 				if len(args) == 1 {
 					recipe.Name = args[0]
 				}
-				recipe.Input, recipe.Run, recipe.Log = options.Input, options, cmd.ErrOrStderr()
+				recipe.Input, recipe.Run = options.Input, options
+				if verbose {
+					recipe.Log = cmd.ErrOrStderr()
+				}
 				result, err := runRecipe(recipe)
 				if err != nil {
 					return err
@@ -151,6 +156,7 @@ Or execute one SPEC route from a local catalog and keep values and Receipts:
 	cmd.Flags().StringVar(&recipe.LocalCatalog, "recipe-dir", "", "Recipe run: use a recipe folder on disk instead of fetching one")
 	cmd.Flags().StringVar(&recipe.ReceiptsDir, "receipts", "", "Recipe run: also write SPEC Receipts into this new directory")
 	cmd.Flags().StringVar(&recipe.KeepSpecsDir, "keep-specs", "", "Recipe run: keep the catalog, intermediate values and Receipts in this new directory, with a README to rerun")
+	cmd.Flags().BoolVar(&verbose, "verbose", false, "Print progress (recipe fetch, each output, store mounts) to stderr")
 	cmd.Flags().BoolVar(&options.AllowUnsafe, "allow-unsafe", false, "Authorize Processors declaring safe: false")
 	cmd.Flags().BoolVar(&options.AllowOpenWorld, "allow-open-world", false, "Authorize Processors declaring open_world: true")
 	addExecutionPolicyFlags(cmd, &options.Policy)
