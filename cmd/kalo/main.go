@@ -97,6 +97,9 @@ type executionPolicy struct {
 	ReadOnlyInputs  bool
 	PluginTimeout   time.Duration
 	PluginMemoryMiB uint32
+	// PluginOutput, when set, receives plugin stdout and stderr instead of
+	// the process streams (kalo spec run keeps stdout for its JSON result).
+	PluginOutput io.Writer
 }
 
 type pluginExecutionCache struct {
@@ -1407,6 +1410,9 @@ func executePlugin(
 		WithArgs(pluginPath, string(configJsonBytes)).
 		WithStdout(os.Stdout).
 		WithStderr(os.Stderr)
+	if policy.PluginOutput != nil {
+		moduleConfig = moduleConfig.WithStdout(policy.PluginOutput).WithStderr(policy.PluginOutput)
+	}
 
 	pluginModule, err := wasmRuntime.InstantiateModule(ctx, compiledWasm, moduleConfig)
 	if err != nil {

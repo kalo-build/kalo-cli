@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Any SPEC v0 descriptor",
+  "oneOf": [
+    {"$ref": "namespace.schema.json"},
+    {"$ref": "contract.schema.json"},
+    {"$ref": "representation-binding.schema.json"},
+    {"$ref": "processor.schema.json"},
+    {"$ref": "processor-implementation.schema.json"},
+    {"$ref": "composition.schema.json"},
+    {"$ref": "receipt.schema.json"}
+  ]
+}
+

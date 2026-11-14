@@ -283,18 +283,37 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 			firstArtifact = inputArtifact
 		}
 
-		stageDir := filepath.Join(workDir, fmt.Sprintf("%02d-%s", index+1, safePathPart(step.ProcessorAddress)))
-		if err := os.MkdirAll(stageDir, 0o755); err != nil {
+		pluginIO, err := specv0.PluginIOFor(step.Implementation)
+		if err != nil {
 			return nil, err
 		}
+		outputBinding := catalog.Bindings[step.OutputBinding]
+		packFileSet := pluginIO != nil && pluginIO.Output.Pack == "fileset"
+		if packFileSet != (outputBinding.MediaType == specv0.MediaTypeFileSet) {
+			return nil, fmt.Errorf("Processor %s: implementation %s output.pack=fileset requires output binding %s to have media_type %s, and the other way round", step.ProcessorAddress, step.ImplementationID, step.OutputBinding, specv0.MediaTypeFileSet)
+		}
+		stageDir := filepath.Join(workDir, fmt.Sprintf("%02d-%s", index+1, safePathPart(step.ProcessorAddress)))
+		stageInputDir := filepath.Join(stageDir, "input")
+		stageOutputDir := filepath.Join(stageDir, "output")
+		for _, dir := range []string{stageInputDir, stageOutputDir} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, err
+			}
+		}
+		if err := stageInputValue(currentPath, inputBinding, pluginIO, stageInputDir); err != nil {
+			return nil, fmt.Errorf("Processor %s input staging: %w", step.ProcessorAddress, err)
+		}
 		stores := map[string]kconfig.Store{
-			"SPEC_INPUT":  {Type: kconfig.StoreTypeLocalFileSystem, Format: step.InputBinding, Options: map[string]any{"path": filepath.Dir(currentPath)}},
-			"SPEC_OUTPUT": {Type: kconfig.StoreTypeLocalFileSystem, Format: step.OutputBinding, Options: map[string]any{"path": stageDir}},
+			"SPEC_INPUT":  {Type: kconfig.StoreTypeLocalFileSystem, Format: step.InputBinding, Options: map[string]any{"path": stageInputDir}},
+			"SPEC_OUTPUT": {Type: kconfig.StoreTypeLocalFileSystem, Format: step.OutputBinding, Options: map[string]any{"path": stageOutputDir}},
 		}
 		plugin := kconfig.PluginDefinition{
 			Plugin: step.ImplementationID, Version: "0.1-alpha",
 			Input:  &kconfig.PluginIOSpec{Format: step.InputBinding, Store: "SPEC_INPUT"},
 			Output: &kconfig.PluginIOSpec{Format: step.OutputBinding, Store: "SPEC_OUTPUT"},
+		}
+		if pluginIO != nil && pluginIO.Config != nil {
+			plugin.Config = pluginIO.Config
 		}
 		implementationPath, _, err := specv0.ResolveArtifact(step.Implementation.SourcePath, step.Implementation.Artifact.Ref)
 		if err != nil {
@@ -308,16 +327,28 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		}
 		stagePolicy := options.Policy
 		stagePolicy.ReadOnlyInputs = true
+		// Plugin stdout and stderr go to our stderr so stdout stays the JSON
+		// result; the tail is repeated in the error so a failure is explained.
+		pluginLog := &tailWriter{dst: os.Stderr, max: 4096}
+		stagePolicy.PluginOutput = pluginLog
 		err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
 		cancel()
 		if options.Policy.PluginTimeout > 0 && pluginCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("Processor %s exceeded timeout %s", step.ProcessorAddress, options.Policy.PluginTimeout)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("Processor %s implementation %s failed: %w", step.ProcessorAddress, step.ImplementationID, err)
+			if tail := pluginLog.Tail(); tail != "" {
+				return nil, fmt.Errorf("Processor %s implementation %s failed: %w\nplugin output (last %d bytes):\n%s", step.ProcessorAddress, step.ImplementationID, err, len(tail), tail)
+			}
+			return nil, fmt.Errorf("Processor %s implementation %s failed: %w (plugin wrote no output)", step.ProcessorAddress, step.ImplementationID, err)
 		}
 		stageEnded := time.Now().UTC()
-		stageOutput, err := singleRegularFile(stageDir)
+		var stageOutput string
+		if packFileSet {
+			stageOutput, err = packStageOutput(stageOutputDir, filepath.Join(stageDir, safePathPart(step.Processor.Outputs[0].Name)+".fileset.json"))
+		} else {
+			stageOutput, err = singleRegularFile(stageOutputDir)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("Processor %s output: %w", step.ProcessorAddress, err)
 		}
@@ -328,7 +359,6 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		outputBinding := catalog.Bindings[step.OutputBinding]
 		outputArtifact := specReceiptArtifact{
 			Port: step.Processor.Outputs[0].Name, Contract: step.OutputContract,
 			ContractVersionID: step.OutputContractVersionID, Binding: step.OutputBinding,

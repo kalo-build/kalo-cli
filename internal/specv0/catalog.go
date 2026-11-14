@@ -37,7 +37,7 @@ func Load(root string) (*Catalog, error) {
 		Bindings: map[string]*Binding{}, Processors: map[string]*Processor{},
 		Implementations: map[string][]*Implementation{}, Compositions: map[string]*Composition{},
 		Receipts:            []*Receipt{},
-		SupportedExtensions: map[string]bool{},
+		SupportedExtensions: map[string]bool{ExtensionPluginIO: true},
 	}
 	err = filepath.WalkDir(abs, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -347,6 +347,9 @@ func (catalog *Catalog) validateLinks() error {
 				return fmt.Errorf("implementation %s: executable artifact ref must not contain a fragment", implementation.ImplementationID)
 			}
 			if err := catalog.checkExtensions(implementation.Resource); err != nil {
+				return err
+			}
+			if _, err := PluginIOFor(implementation); err != nil {
 				return err
 			}
 		}
@@ -717,9 +720,9 @@ func (catalog *Catalog) ValidateValue(bindingAddress, valuePath string) error {
 	if err != nil {
 		return err
 	}
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return fmt.Errorf("%s: decode represented value: %w", valuePath, err)
+	value, err := DecodeValue(binding.MediaType, data)
+	if err != nil {
+		return fmt.Errorf("%s: decode represented value (%s): %w", valuePath, mediaTypeOrJSON(binding.MediaType), err)
 	}
 	if err := schema.Validate(value); err != nil {
 		return fmt.Errorf("%s violates %s: %w", valuePath, bindingAddress, err)
