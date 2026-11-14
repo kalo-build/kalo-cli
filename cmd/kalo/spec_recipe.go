@@ -25,7 +25,7 @@ import (
 )
 
 // A recipe is a SPEC catalog plus recipe.yaml, published as the release asset
-// recipe-<name>-<version>.tar.gz (with a .sha256 file) under the kalo-plugins
+// recipe-<name>-v<version>.tar.gz (with a .sha256 file) under the kalo-plugins
 // release tag recipe-<name>-v<version>. See eng/one-shot D4 and D5.
 
 const (
@@ -190,7 +190,7 @@ func resolveRecipe(options recipeRunOptions) (string, error) {
 	defer os.RemoveAll(staging)
 
 	base := strings.TrimRight(envOr("KALO_RECIPE_DOWNLOAD_BASE", defaultRecipeDownloadBase), "/")
-	asset := fmt.Sprintf("recipe-%s-%s.tar.gz", options.Name, version)
+	asset := fmt.Sprintf("recipe-%s-v%s.tar.gz", options.Name, version) // same name as the tag
 	assetURL := fmt.Sprintf("%s/recipe-%s-v%s/%s", base, options.Name, version, asset)
 	if options.Log != nil {
 		fmt.Fprintf(options.Log, "fetching recipe %s %s\n", options.Name, version)

@@ -68,12 +68,12 @@ func serveRecipe(t *testing.T, archive []byte, sum string) *int32 {
 	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `[{"tag_name":"recipe-fixture-v9.0.0","draft":true},{"tag_name":"recipe-fixture-v0.1.0"},{"tag_name":"recipe-fixture-v0.0.9"},{"tag_name":"recipe-other-v1.0.0"}]`)
 	})
-	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-0.1.0.tar.gz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-v0.1.0.tar.gz", func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&assetGets, 1)
 		_, _ = w.Write(archive)
 	})
-	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-0.1.0.tar.gz.sha256", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "%s  recipe-fixture-0.1.0.tar.gz\n", sum)
+	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-v0.1.0.tar.gz.sha256", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s  recipe-fixture-v0.1.0.tar.gz\n", sum)
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
