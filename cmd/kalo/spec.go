@@ -384,11 +384,17 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		// Plugin stdout and stderr go to our stderr so stdout stays the JSON
 		// result; the tail is repeated in the error so a failure is explained.
 		pluginLog := &tailWriter{dst: os.Stderr, max: 4096}
+		// A quiet run still passes on the plugin's "warning:" lines.
+		var warnings *warningWriter
 		if options.QuietPluginOutput {
-			pluginLog.dst = nil
+			warnings = &warningWriter{dst: os.Stderr, prefix: step.ProcessorAddress + ": "}
+			pluginLog.dst = warnings
 		}
 		stagePolicy.PluginOutput = pluginLog
 		err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
+		if warnings != nil {
+			warnings.Flush()
+		}
 		cancel()
 		if options.Policy.PluginTimeout > 0 && pluginCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("Processor %s exceeded timeout %s", step.ProcessorAddress, options.Policy.PluginTimeout)
