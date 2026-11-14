@@ -135,8 +135,11 @@ func (d *pluginExecutionDiagnostic) Unwrap() error {
 
 func main() {
 	// Load .env file if it exists
-	if err := godotenv.Load(); err != nil {
-		log.Println("Warning: No .env file found. Using system environment variables.")
+	// Load .env only if present; its absence is normal and not worth a warning.
+	if _, statErr := os.Stat(".env"); statErr == nil {
+		if err := godotenv.Load(); err != nil {
+			log.Printf("Warning: could not load .env: %v", err)
+		}
 	}
 
 	rootCmd := &cobra.Command{
@@ -1285,7 +1288,7 @@ func executePlugin(
 			} else {
 				fsConfig = fsConfig.WithDirMount(storePath, mountPath)
 			}
-			log.Printf("Mounting store '%s' at '%s' (path: %s, read-only: %t)", storeName, mountPath, storePath, readOnly)
+			hostLogf("Mounting store '%s' at '%s' (path: %s, read-only: %t)", storeName, mountPath, storePath, readOnly)
 
 			storeConfigs[storeName] = StoreConfig{
 				ID:        storeID,
@@ -1562,4 +1565,14 @@ func extractTree(tree *object.Tree, destDir string) error {
 	}
 
 	return nil
+}
+
+// hostVerbose gates host progress logs (store mounts). The kalo.yaml commands
+// keep them on; `kalo spec run` turns them off unless --verbose.
+var hostVerbose = true
+
+func hostLogf(format string, args ...any) {
+	if hostVerbose {
+		log.Printf(format, args...)
+	}
 }
