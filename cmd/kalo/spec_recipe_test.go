@@ -68,12 +68,12 @@ func serveRecipe(t *testing.T, archive []byte, sum string) *int32 {
 	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `[{"tag_name":"recipe-fixture-v9.0.0","draft":true},{"tag_name":"recipe-fixture-v0.1.0"},{"tag_name":"recipe-fixture-v0.0.9"},{"tag_name":"recipe-other-v1.0.0"}]`)
 	})
-	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-0.1.0.tar.gz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-v0.1.0.tar.gz", func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&assetGets, 1)
 		_, _ = w.Write(archive)
 	})
-	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-0.1.0.tar.gz.sha256", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "%s  recipe-fixture-0.1.0.tar.gz\n", sum)
+	mux.HandleFunc("/dl/recipe-fixture-v0.1.0/recipe-fixture-v0.1.0.tar.gz.sha256", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s  recipe-fixture-v0.1.0.tar.gz\n", sum)
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -212,6 +212,21 @@ func TestRecipeLatestVersionFollowsPagesAndExplainsRateLimit(t *testing.T) {
 	require.ErrorContains(t, err, "--recipe-version")
 }
 
+func TestRecipeLatestVersionRefusesNextLinkToAnotherHost(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `[{"tag_name":"recipe-fixture-v9.9.9"}]`)
+	}))
+	t.Cleanup(other.Close)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Link", fmt.Sprintf(`<%s/releases?page=2>; rel="next"`, other.URL))
+		fmt.Fprint(w, `[{"tag_name":"recipe-fixture-v0.2.0"}]`)
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("KALO_RECIPE_RELEASES_API", server.URL+"/releases")
+	_, err := latestRecipeVersion(server.Client(), "fixture")
+	require.ErrorContains(t, err, "leaves the API host")
+}
+
 func TestRecipeExtractCapsEntries(t *testing.T) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
@@ -234,6 +249,7 @@ func TestRecipeRejectsOverlappingDestinationsBeforeWriting(t *testing.T) {
 		{LocalCatalog: root, Input: userInput(t, root), Out: out, KeepSpecsDir: filepath.Join(out, "ts")},
 		{LocalCatalog: root, Input: userInput(t, root), Out: out, KeepSpecsDir: filepath.Join(root, "kept")},
 		{LocalCatalog: root, Input: userInput(t, root), Out: out, ReceiptsDir: filepath.Join(parent, "ev"), KeepSpecsDir: filepath.Join(parent, "ev", "k")},
+		{LocalCatalog: root, Input: userInput(t, root), Out: filepath.Join(root, "sdk")},
 	}
 	for _, options := range cases {
 		_, err := runRecipe(options)
