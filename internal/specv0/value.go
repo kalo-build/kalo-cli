@@ -53,6 +53,9 @@ func DecodeValue(mediaType string, data []byte) (any, error) {
 		var raw any
 		decoder := yaml.NewDecoder(bytes.NewReader(data))
 		if err := decoder.Decode(&raw); err != nil {
+			if hint := yamlControlCharHint(data); hint != "" {
+				return nil, fmt.Errorf("decode YAML: %s", hint)
+			}
 			return nil, fmt.Errorf("decode YAML: %w", err)
 		}
 		var extra any
@@ -274,4 +277,36 @@ func mediaTypeOrJSON(mediaType string) string {
 		return "application/json"
 	}
 	return mediaType
+}
+
+// yamlControlCharHint names the first character YAML 1.2 does not allow
+// (C0 controls other than tab, LF and CR; DEL; C1 controls other than NEL;
+// U+FFFE and U+FFFF), with its line and how many more follow. The input is
+// never rewritten: the user decides what the character should have been.
+func yamlControlCharHint(data []byte) string {
+	line, count, firstLine := 1, 0, 0
+	var first rune
+	for _, r := range string(data) {
+		if r == '\n' {
+			line++
+			continue
+		}
+		bad := (r < 0x20 && r != '\t' && r != '\r') || r == 0x7f ||
+			(r >= 0x80 && r <= 0x9f && r != 0x85) || r == 0xfffe || r == 0xffff
+		if !bad {
+			continue
+		}
+		if count == 0 {
+			first, firstLine = r, line
+		}
+		count++
+	}
+	if count == 0 {
+		return ""
+	}
+	more := ""
+	if count > 1 {
+		more = fmt.Sprintf(" (%d more after it)", count-1)
+	}
+	return fmt.Sprintf("line %d has control character U+%04X, which YAML does not allow%s; remove or replace it and run again", firstLine, first, more)
 }

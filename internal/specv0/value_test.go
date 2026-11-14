@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -136,5 +137,16 @@ func TestPackDirRejectsPathsUnpackWouldRefuse(t *testing.T) {
 	}
 	if _, err := PackDir(src); err == nil {
 		t.Fatal(`expected a file named a\b to be refused`)
+	}
+}
+
+func TestDecodeYAMLNamesControlCharacter(t *testing.T) {
+	data := []byte("openapi: 3.0.0\ninfo:\n  title: a\u009fb\n  description: c\u0091d\n")
+	_, err := DecodeValue("application/yaml", data)
+	if err == nil || !strings.Contains(err.Error(), "line 3 has control character U+009F") || !strings.Contains(err.Error(), "(1 more after it)") {
+		t.Fatalf("want a line and code point in the error, got %v", err)
+	}
+	if _, err := DecodeValue("application/yaml", []byte("a: \"x\u0085y\"\n")); err != nil {
+		t.Fatalf("NEL is allowed in YAML: %v", err)
 	}
 }
