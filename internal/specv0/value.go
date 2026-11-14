@@ -1,10 +1,12 @@
 package specv0
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,9 +22,19 @@ import (
 // media_type; SPEC v0.1-alpha itself is unchanged.
 const MediaTypeFileSet = "application/vnd.kalo.fileset+json"
 
+func normaliseMediaType(mediaType string) string {
+	return strings.ToLower(strings.TrimSpace(strings.SplitN(mediaType, ";", 2)[0]))
+}
+
+// IsFileSetMediaType reports whether values of a binding are Kalo file sets,
+// ignoring case and media type parameters.
+func IsFileSetMediaType(mediaType string) bool {
+	return normaliseMediaType(mediaType) == MediaTypeFileSet
+}
+
 // IsYAMLMediaType reports whether values of a binding are YAML documents.
 func IsYAMLMediaType(mediaType string) bool {
-	mediaType = strings.ToLower(strings.TrimSpace(strings.SplitN(mediaType, ";", 2)[0]))
+	mediaType = normaliseMediaType(mediaType)
 	switch mediaType {
 	case "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml":
 		return true
@@ -32,13 +44,23 @@ func IsYAMLMediaType(mediaType string) bool {
 
 // DecodeValue decodes a represented value by its binding media type. YAML is
 // normalised through JSON so JSON Schema validation sees the same types for a
-// YAML document as for the equivalent JSON document. Digests are always taken
+// YAML document as for the equivalent JSON document (so an unquoted
+// 2020-01-01 is validated as a timestamp string; the plugin still gets the raw
+// bytes). A YAML value must be exactly one document. Digests are always taken
 // over the raw bytes, never over the decoded value.
 func DecodeValue(mediaType string, data []byte) (any, error) {
 	if IsYAMLMediaType(mediaType) {
 		var raw any
-		if err := yaml.Unmarshal(data, &raw); err != nil {
+		decoder := yaml.NewDecoder(bytes.NewReader(data))
+		if err := decoder.Decode(&raw); err != nil {
 			return nil, fmt.Errorf("decode YAML: %w", err)
+		}
+		var extra any
+		if err := decoder.Decode(&extra); err != io.EOF {
+			if err != nil {
+				return nil, fmt.Errorf("decode YAML: %w", err)
+			}
+			return nil, fmt.Errorf("decode YAML: value must be a single YAML document")
 		}
 		normalised, err := json.Marshal(raw)
 		if err != nil {
@@ -68,6 +90,25 @@ type FileSetEntry struct {
 // PackDir packs every regular file below root into a file set, sorted by
 // slash-separated relative path. Symlinks and other special files are refused.
 func PackDir(root string) ([]byte, error) {
+	set, err := PackDirSet(root)
+	if err != nil {
+		return nil, err
+	}
+	return MarshalFileSet(set)
+}
+
+// MarshalFileSet writes the canonical encoding of a file set.
+func MarshalFileSet(set FileSet) ([]byte, error) {
+	data, err := json.MarshalIndent(set, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+// PackDirSet is PackDir without the encoding step. Every path is checked with
+// the rules UnpackFileSet applies, so a packed set can always be unpacked.
+func PackDirSet(root string) (FileSet, error) {
 	set := FileSet{Files: []FileSetEntry{}}
 	err := filepath.WalkDir(root, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -83,11 +124,18 @@ func PackDir(root string) ([]byte, error) {
 		if err != nil {
 			return err
 		}
+		slashRel := filepath.ToSlash(rel)
+		if !utf8.ValidString(slashRel) {
+			return fmt.Errorf("file set: path %q is not valid UTF-8", slashRel)
+		}
+		if _, err := cleanFileSetPath(slashRel); err != nil {
+			return err
+		}
 		data, err := os.ReadFile(current)
 		if err != nil {
 			return err
 		}
-		item := FileSetEntry{Path: filepath.ToSlash(rel), SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
+		item := FileSetEntry{Path: slashRel, SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
 		if utf8.Valid(data) {
 			item.Encoding, item.Content = "utf8", string(data)
 		} else {
@@ -97,14 +145,10 @@ func PackDir(root string) ([]byte, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return FileSet{}, err
 	}
 	sort.Slice(set.Files, func(i, j int) bool { return set.Files[i].Path < set.Files[j].Path })
-	data, err := json.MarshalIndent(set, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(data, '\n'), nil
+	return set, nil
 }
 
 // UnpackFileSet writes a file set below root after checking every path and

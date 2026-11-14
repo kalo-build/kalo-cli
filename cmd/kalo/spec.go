@@ -289,7 +289,7 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		}
 		outputBinding := catalog.Bindings[step.OutputBinding]
 		packFileSet := pluginIO != nil && pluginIO.Output.Pack == "fileset"
-		if packFileSet != (outputBinding.MediaType == specv0.MediaTypeFileSet) {
+		if packFileSet != specv0.IsFileSetMediaType(outputBinding.MediaType) {
 			return nil, fmt.Errorf("Processor %s: implementation %s output.pack=fileset requires output binding %s to have media_type %s, and the other way round", step.ProcessorAddress, step.ImplementationID, step.OutputBinding, specv0.MediaTypeFileSet)
 		}
 		stageDir := filepath.Join(workDir, fmt.Sprintf("%02d-%s", index+1, safePathPart(step.ProcessorAddress)))

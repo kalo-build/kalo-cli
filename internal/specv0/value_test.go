@@ -3,6 +3,7 @@ package specv0
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -99,5 +100,41 @@ func TestPluginIOFor(t *testing.T) {
 	} {
 		_, err := PluginIOFor(implementation(ext))
 		require.Error(t, err, name)
+	}
+}
+
+func TestDecodeValueRejectsTrailingYAMLDocuments(t *testing.T) {
+	if _, err := DecodeValue("application/yaml", []byte("ok: true\n---\nok: false\n")); err == nil {
+		t.Fatal("expected a second YAML document to be rejected")
+	}
+	if _, err := DecodeValue("application/yaml", []byte("ok: true\n---\n: : bad\n  - x\n")); err == nil {
+		t.Fatal("expected a malformed trailing YAML document to be rejected")
+	}
+	if _, err := DecodeValue("application/yaml", []byte("---\nok: true\n")); err != nil {
+		t.Fatalf("single document with leading marker: %v", err)
+	}
+}
+
+func TestFileSetMediaTypeIgnoresCaseAndParameters(t *testing.T) {
+	for _, mediaType := range []string{MediaTypeFileSet, "Application/Vnd.Kalo.Fileset+Json", "application/vnd.kalo.fileset+json; charset=utf-8"} {
+		if !IsFileSetMediaType(mediaType) {
+			t.Fatalf("%q should be a file set", mediaType)
+		}
+	}
+	if IsFileSetMediaType("application/json") {
+		t.Fatal("application/json is not a file set")
+	}
+}
+
+func TestPackDirRejectsPathsUnpackWouldRefuse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("backslash is a separator on Windows")
+	}
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, `a\b`), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PackDir(src); err == nil {
+		t.Fatal(`expected a file named a\b to be refused`)
 	}
 }
