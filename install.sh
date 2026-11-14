@@ -9,6 +9,8 @@ set -e
 REPO="kalo-build/kalo-cli"
 BINARY_NAME="kalo"
 INSTALL_DIR="${KALO_INSTALL_DIR:-/usr/local/bin}"
+# Drop a trailing slash so PATH and shadowing checks compare like with like.
+case "$INSTALL_DIR" in ?*/) INSTALL_DIR="${INSTALL_DIR%/}" ;; esac
 
 # Colors for output
 RED='\033[0;31m'
