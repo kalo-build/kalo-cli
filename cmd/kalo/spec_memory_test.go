@@ -76,6 +76,21 @@ func TestTailWriterKeepsCauseBeforeLongDump(t *testing.T) {
 	}
 }
 
+func TestReadOnceReadsMeminfoOnce(t *testing.T) {
+	reads := 0
+	limit := readOnce(func() memoryLimit {
+		reads++
+		return memoryLimit{MiB: uint32(1000 - 100*reads), Source: "free memory"}
+	})
+	first, second := limit(), limit()
+	if reads != 1 {
+		t.Fatalf("meminfo read %d times; want 1", reads)
+	}
+	if first != second || first.MiB != 900 {
+		t.Fatalf("readOnce returned %+v then %+v; want the first reading (900 MiB) both times", first, second)
+	}
+}
+
 func TestDefaultMemoryLimitIsReadOncePerProcess(t *testing.T) {
 	first := pluginMemoryLimit(0)
 	second := pluginMemoryLimit(0)
