@@ -39,9 +39,15 @@ func pluginMemoryLimit(flagMiB uint32) memoryLimit {
 // keeps the pages it used, so a later reading counts the host twice and the
 // second plugin got a smaller cap (Plaid: 310 MiB for the Go generator on a
 // 2 GB machine, task hq-20). The first reading already reserves the baseline.
-var defaultMemoryLimit = sync.OnceValue(func() memoryLimit {
+var defaultMemoryLimit = readOnce(func() memoryLimit {
 	return memoryLimitFromMeminfo("/proc/meminfo")
 })
+
+// readOnce wraps a reading so it runs on the first call only; later calls
+// return the first result. Split out so the test can count readings.
+func readOnce(read func() memoryLimit) func() memoryLimit {
+	return sync.OnceValue(read)
+}
 
 func memoryLimitFromMeminfo(path string) memoryLimit {
 	available, ok := memAvailableMiB(path)
