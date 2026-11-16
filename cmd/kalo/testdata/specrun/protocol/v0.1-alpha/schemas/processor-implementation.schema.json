@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 Processor Implementation descriptor",
+  "type": "object",
+  "required": [
+    "spec",
+    "kind",
+    "implementation_id",
+    "processor",
+    "processor_version_id",
+    "mechanism",
+    "artifact"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "spec": {"$ref": "base.schema.json#/$defs/specVersion"},
+    "kind": {"const": "ProcessorImplementation"},
+    "implementation_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "processor": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+    "processor_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "mechanism": {"type": "string", "minLength": 1},
+    "artifact": {
+      "allOf": [
+        {"$ref": "base.schema.json#/$defs/artifact"},
+        {"required": ["digest"]}
+      ]
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "supported_bindings": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/bindingAddress"},
+      "uniqueItems": true
+    },
+    "extensions": {"$ref": "base.schema.json#/$defs/extensions"},
+    "required_extensions": {"$ref": "base.schema.json#/$defs/requiredExtensions"}
+  },
+  "additionalProperties": false
+}

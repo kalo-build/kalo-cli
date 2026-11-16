@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 Processor descriptor",
+  "type": "object",
+  "required": [
+    "spec",
+    "kind",
+    "address",
+    "namespace_id",
+    "family_id",
+    "version_id",
+    "version",
+    "inputs",
+    "outputs"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "spec": {"$ref": "base.schema.json#/$defs/specVersion"},
+    "kind": {"const": "Processor"},
+    "address": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+    "namespace_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "family_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "version": {"$ref": "base.schema.json#/$defs/version"},
+    "description": {"type": "string"},
+    "definition": {"$ref": "base.schema.json#/$defs/definition"},
+    "inputs": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/processorPort"}
+    },
+    "outputs": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/processorPort"}
+    },
+    "state": {
+      "type": "array",
+      "items": {"$ref": "base.schema.json#/$defs/statePort"}
+    },
+    "effects": {
+      "type": "object",
+      "required": ["safe", "idempotent", "open_world"],
+      "properties": {
+        "safe": {"type": "boolean"},
+        "idempotent": {"type": "boolean"},
+        "open_world": {"type": "boolean"},
+        "intended": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "transaction": {
+      "type": "object",
+      "required": ["scope", "atomic"],
+      "properties": {
+        "scope": {"const": "local-state"},
+        "atomic": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "implementation_requirements": {
+      "type": "object",
+      "properties": {
+        "mechanisms": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "locality": {"enum": ["local", "remote", "either"]}
+      },
+      "additionalProperties": false
+    },
+    "extensions": {"$ref": "base.schema.json#/$defs/extensions"},
+    "required_extensions": {"$ref": "base.schema.json#/$defs/requiredExtensions"}
+  },
+  "anyOf": [
+    {"properties": {"inputs": {"minItems": 1}}},
+    {"properties": {"outputs": {"minItems": 1}}}
+  ],
+  "additionalProperties": false
+}

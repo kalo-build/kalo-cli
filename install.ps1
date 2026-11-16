@@ -46,8 +46,14 @@ function Install-Kalo {
     $Arch = Get-Architecture
     Write-Info "Architecture: $Arch"
 
-    Write-Info "Fetching latest version..."
-    $Version = Get-LatestVersion
+    if ($env:KALO_VERSION) {
+        $Version = $env:KALO_VERSION
+        if (-not $Version.StartsWith("v")) { $Version = "v$Version" }
+        Write-Info "Requested version: $Version"
+    } else {
+        Write-Info "Fetching latest version..."
+        $Version = Get-LatestVersion
+    }
     if (-not $Version) {
         Write-Error "Could not determine latest version"
     }

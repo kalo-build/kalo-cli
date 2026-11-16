@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 Namespace descriptor",
+  "type": "object",
+  "required": ["spec", "kind", "alias", "namespace_id"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "spec": {"$ref": "base.schema.json#/$defs/specVersion"},
+    "kind": {"const": "Namespace"},
+    "alias": {"$ref": "base.schema.json#/$defs/namespaceAlias"},
+    "namespace_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "description": {"type": "string"},
+    "authority": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "contact": {"type": "string", "minLength": 1},
+        "proof": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "resolver_hints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["mechanism", "ref"],
+        "properties": {
+          "mechanism": {"type": "string", "minLength": 1},
+          "ref": {"type": "string", "minLength": 1},
+          "priority": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "extensions": {"$ref": "base.schema.json#/$defs/extensions"},
+    "required_extensions": {"$ref": "base.schema.json#/$defs/requiredExtensions"}
+  },
+  "additionalProperties": false
+}
+

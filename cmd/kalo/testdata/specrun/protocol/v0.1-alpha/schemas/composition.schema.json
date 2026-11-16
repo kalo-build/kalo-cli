@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SPEC v0 Composition descriptor",
+  "type": "object",
+  "required": [
+    "spec",
+    "kind",
+    "address",
+    "namespace_id",
+    "family_id",
+    "version_id",
+    "version",
+    "nodes",
+    "edges",
+    "inputs",
+    "outputs"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "spec": {"$ref": "base.schema.json#/$defs/specVersion"},
+    "kind": {"const": "Composition"},
+    "address": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+    "namespace_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "family_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+    "version": {"$ref": "base.schema.json#/$defs/version"},
+    "description": {"type": "string"},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "processor", "processor_version_id"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "processor": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+          "processor_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+          "implementation_id": {"$ref": "base.schema.json#/$defs/uuid"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "contract", "contract_version_id"],
+        "properties": {
+          "from": {"$ref": "base.schema.json#/$defs/endpoint"},
+          "to": {"$ref": "base.schema.json#/$defs/endpoint"},
+          "contract": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+          "contract_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+          "binding": {"$ref": "base.schema.json#/$defs/bindingAddress"},
+          "binding_version_id": {"$ref": "base.schema.json#/$defs/uuid"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "to", "contract", "contract_version_id"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "to": {"$ref": "base.schema.json#/$defs/endpoint"},
+          "contract": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+          "contract_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+          "binding": {"$ref": "base.schema.json#/$defs/bindingAddress"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "from", "contract", "contract_version_id"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "from": {"$ref": "base.schema.json#/$defs/endpoint"},
+          "contract": {"$ref": "base.schema.json#/$defs/resourceAddress"},
+          "contract_version_id": {"$ref": "base.schema.json#/$defs/uuid"},
+          "binding": {"$ref": "base.schema.json#/$defs/bindingAddress"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "state_bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node", "port", "binding_ref"],
+        "properties": {
+          "node": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "port": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "binding_ref": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "extensions": {"$ref": "base.schema.json#/$defs/extensions"},
+    "required_extensions": {"$ref": "base.schema.json#/$defs/requiredExtensions"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,22 @@
+$schema: ../../protocol/v0.1-alpha/schemas/processor-implementation.schema.json
+spec: "0.1-alpha"
+kind: ProcessorImplementation
+implementation_id: dddddddd-0000-4000-8000-000000000001
+processor: KALOX:OPENAPI-TO-TS-SDK@1
+processor_version_id: cccccccc-0000-4000-8000-000000000002
+mechanism: wasm-wasi-preview1
+artifact:
+  ref: ../../artifacts/plugin.wasm
+  media_type: application/wasm
+  digest: {{DIGEST}}
+capabilities: [filesystem-input, filesystem-output]
+supported_bindings:
+  - KALOX:OPENAPI@1:JSON@1
+  - KALOX:TS-SDK@1:JSON@1
+required_extensions: ["KALO:PLUGIN-IO"]
+extensions:
+  KALO:PLUGIN-IO:
+    abi: kalo-plugin-v1
+    input: {filename: openapi.yaml}
+    output: {pack: fileset}
+    config: {specFileName: openapi.yaml}

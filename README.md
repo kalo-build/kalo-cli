@@ -140,6 +140,25 @@ kalo plugin install @kalo-build/plugin-morphe-go-struct
 | `kalo compile` | Shorthand for `kalo run compile` |
 | `kalo plugin install <plugin>` | Install a specific plugin from registry |
 
+### Experimental SPEC v0.1-alpha adapter
+
+Kalo can validate an offline [SPEC](https://github.com/spec-contracts/spec)
+descriptor catalog, derive a deterministic nominal route from Processor edges,
+and execute selected `wasm-wasi-preview1` ProcessorImplementations:
+
+```shell
+kalo spec validate ./descriptors
+kalo spec route --catalog ./descriptors --from SPECX:SOURCE@1 --to SPECX:TARGET@1
+kalo spec run --catalog ./descriptors --from SPECX:SOURCE@1 --to SPECX:TARGET@1 --input ./source.json --output ./spec-output --offline --deny-network
+```
+
+This path reads SPEC descriptors directly and does not use `kalo.yaml` for
+planning. It validates JSON values at every selected Representation Binding,
+verifies executable artifact digests, and emits linked SPEC Receipts. The alpha
+host supports local filesystem I/O and WASI Preview 1 only. It rejects required
+state, unknown required extensions, unsupported representation mechanisms, and
+unsafe or open-world effects unless explicitly authorized.
+
 ## Configuration
 
 Kalo CLI uses a YAML configuration file (`kalo.yaml` by default) to define stores, plugins, and pipelines.
@@ -226,6 +245,38 @@ After `kalo install`, the CLI writes **`kalo.lock`** next to `kalo.yaml`. It pin
 **Path separators:** On save and load, **`location`** paths are normalized to **forward slashes** (`/`). `filepath.ToSlash` alone is not enough on Linux (it only maps `os.PathSeparator`, which is already `/` there), so backslashes from Windows are replaced explicitly—same result on every OS for committed lockfiles. The OS still stores files under `.kalo/plugins/` as usual; Go resolves POSIX-style paths correctly on Windows at runtime.
 
 **`kalo plugin install`:** A successful install or upgrade always refreshes **`kalo.lock`**. If the plugin is **already** at the requested version (`Nothing to do`), the CLI still **reconciles the lockfile** from **`kalo.yaml`** so a missing **`kalo.lock`** gets created (same as `kalo install` for that manifest).
+
+### Restricted and deterministic execution
+
+Kalo verifies the SHA-256 of the exact plugin bytes loaded for execution against
+the plugin's `resolvedHash` in `kalo.lock`. A missing hash or mismatch fails
+closed.
+
+`kalo run` and `kalo compile` also accept opt-in restrictions for automation and
+untrusted inputs:
+
+```bash
+kalo compile \
+  --offline \
+  --deny-network \
+  --deterministic \
+  --read-only-inputs \
+  --plugin-timeout 2s \
+  --plugin-memory-mib 32
+```
+
+- `--offline` requires every locked artifact to already be present and disables
+  execution-time registry downloads.
+- `--deny-network` additionally rejects database stores. WASI plugins are not
+  given socket APIs.
+- `--deterministic` replaces Kalo's real-time host clock with a stable value.
+- `--read-only-inputs` prevents plugins from mutating input mounts; declared
+  output mounts remain writable.
+- `--plugin-timeout` and `--plugin-memory-mib` bound each plugin's runtime and
+  linear memory.
+
+Use `kalo install` separately before an offline run. These restrictions are
+opt-in so existing projects retain their current execution behavior.
 
 ## Building WASM Plugins
 
