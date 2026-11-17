@@ -7,6 +7,20 @@ A modern, powerful CLI tool for running Morphe compilation plugins using WebAsse
 
 Kalo CLI enables the seamless compilation of Morphe models, entities, enums, and structures across different formats using WASM plugins. The tool is designed to be extensible, supporting multiple input and output formats through a flexible configuration system.
 
+## One-shot: typed clients from your OpenAPI 3.0 file (technical preview)
+
+One command writes a TypeScript client and a Go client into your repo. Plain files you commit: no config, no account, no runtime dependency.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kalo-build/kalo-cli/agent-main/install.sh | KALO_VERSION=v0.2.0-agent.4 KALO_INSTALL_DIR="$HOME/.local/bin" sh
+export PATH="$HOME/.local/bin:$PATH"
+kalo spec run openapi-sdk --input ./openapi.yaml --out ./sdk
+```
+
+Tested on Linux; installs into `~/.local/bin`, no root needed. The first run compiles the two plugins and says so: allow about a minute on a small file. After that a run takes a few seconds. Same file in, same bytes out.
+
+Try it on kalo.build and see where it stops: [kalo.build/openapi-sdk](https://kalo.build/openapi-sdk).
+
 ## Features
 
 - **WASM Plugin Support**: Run compiled plugins in a secure WASM sandbox
