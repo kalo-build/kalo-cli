@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,6 +92,9 @@ type specRunOptions struct {
 	// QuietPluginOutput keeps plugin stdout/stderr off our stderr (recipe runs
 	// without --verbose); the tail is still kept for error messages.
 	QuietPluginOutput bool
+	// Progress, when set, gets one line per step before it starts, so a
+	// cold run that spends most of a minute compiling is not silent.
+	Progress io.Writer
 }
 
 func specRunCommand() *cobra.Command {
@@ -126,6 +130,7 @@ Or execute one SPEC route from a local catalog and keep values and Receipts:
 				}
 				recipe.Input, recipe.Run = options.Input, options
 				recipe.Run.QuietPluginOutput = !verbose
+				recipe.Run.Progress = cmd.ErrOrStderr()
 				if verbose {
 					recipe.Log = cmd.ErrOrStderr()
 				}
@@ -302,6 +307,8 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 	if memoryLimit.MiB > 0 {
 		runtimeConfig = runtimeConfig.WithMemoryLimitPages(memoryLimit.MiB * 16)
 	}
+	runtimeConfig, closeCompileCache := withCompileCache(ctx, runtimeConfig)
+	defer closeCompileCache() // deferred first, so it runs after wasmRuntime.Close
 	wasmRuntime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer wasmRuntime.Close(ctx)
 	wasi_snapshot_preview1.MustInstantiate(ctx, wasmRuntime)
@@ -372,6 +379,13 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		implementationPath, _, err := specv0.ResolveArtifact(step.Implementation.SourcePath, step.Implementation.Artifact.Ref)
 		if err != nil {
 			return nil, err
+		}
+		if options.Progress != nil {
+			stepOf := ""
+			if len(route.Steps) > 1 {
+				stepOf = fmt.Sprintf(" (step %d/%d)", index+1, len(route.Steps))
+			}
+			fmt.Fprintf(options.Progress, "kalo: running %s%s; the first run compiles the plugin and can take a minute\n", step.ProcessorAddress, stepOf)
 		}
 		stageStarted := time.Now().UTC()
 		pluginCtx := ctx
