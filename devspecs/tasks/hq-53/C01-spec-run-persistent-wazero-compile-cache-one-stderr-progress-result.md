@@ -67,3 +67,16 @@
   - `cmd/kalo/spec_compile_cache_test.go`
 - Tests run:
   - `go vet ./... && go test ./... -count=1 (green); mutations: no cache -> KeepsCompiled fails, no retry -> CorruptCache fails; Petstore --recipe-dir base 43.3/20.0 s, patched 43.9/2.2 s, outputs identical`
+
+### Checkpoint
+- Created At: 2026-11-17T14:44:06Z
+- Stage: validated
+- Decision: promote
+- Source: `checkpoints/20261117-144406-validated.md`
+- Structured Evidence: `checkpoints/20261117-144406-validated.json`
+- What changed: -
+- Evidence for decision: 1 test command(s)
+- What remains: -
+- Next iteration: promote to the next slice
+- Tests run:
+  - `go test -count=1 ./internal/installsh (runs scripts/test-install.sh, 11/11 ok; mutation with old install.sh fails); page three-line paste with branch install.sh, env -i clean HOME, no sudo`
