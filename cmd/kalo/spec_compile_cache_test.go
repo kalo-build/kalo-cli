@@ -74,3 +74,46 @@ func TestSpecRunCompileCacheCanBeTurnedOff(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, countFiles(t, filepath.Join(cacheRoot, "wazero")))
 }
+
+func TestSpecRunWithoutCacheWhenCacheDirIsReadOnly(t *testing.T) {
+	cacheRoot := t.TempDir()
+	t.Setenv("KALO_CACHE_DIR", cacheRoot)
+	t.Setenv("KALO_NO_COMPILE_CACHE", "")
+	compiled := filepath.Join(cacheRoot, "wazero")
+	require.NoError(t, os.MkdirAll(compiled, 0o555))
+	t.Cleanup(func() { os.Chmod(compiled, 0o755) })
+	root := buildFixtureCatalog(t, nil)
+
+	_, err := runSPEC(fixtureRunOptions(root, filepath.Join(t.TempDir(), "out")))
+	require.NoError(t, err)
+	require.Equal(t, 0, countFiles(t, compiled))
+}
+
+func TestSpecRunRecompilesOverACorruptCache(t *testing.T) {
+	cacheRoot := t.TempDir()
+	t.Setenv("KALO_CACHE_DIR", cacheRoot)
+	t.Setenv("KALO_NO_COMPILE_CACHE", "")
+	root := buildFixtureCatalog(t, nil)
+	first := fixtureRunOptions(root, filepath.Join(t.TempDir(), "out"))
+	firstResult, err := runSPEC(first)
+	require.NoError(t, err)
+
+	corrupted := 0
+	require.NoError(t, filepath.WalkDir(filepath.Join(cacheRoot, "wazero"), func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			corrupted++
+			return os.WriteFile(path, []byte("not a compiled module"), 0o644)
+		}
+		return err
+	}))
+	require.Greater(t, corrupted, 0)
+
+	second := fixtureRunOptions(root, filepath.Join(t.TempDir(), "out"))
+	secondResult, err := runSPEC(second)
+	require.NoError(t, err)
+	firstOut, err := os.ReadFile(filepath.Join(first.Output, filepath.FromSlash(firstResult.Output)))
+	require.NoError(t, err)
+	secondOut, err := os.ReadFile(filepath.Join(second.Output, filepath.FromSlash(secondResult.Output)))
+	require.NoError(t, err)
+	require.Equal(t, string(firstOut), string(secondOut))
+}

@@ -307,7 +307,7 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 	if memoryLimit.MiB > 0 {
 		runtimeConfig = runtimeConfig.WithMemoryLimitPages(memoryLimit.MiB * 16)
 	}
-	runtimeConfig, closeCompileCache := withCompileCache(ctx, runtimeConfig)
+	runtimeConfig, compileCacheDir, closeCompileCache := withCompileCache(ctx, runtimeConfig)
 	defer closeCompileCache() // deferred first, so it runs after wasmRuntime.Close
 	wasmRuntime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer wasmRuntime.Close(ctx)
@@ -406,6 +406,12 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		}
 		stagePolicy.PluginOutput = pluginLog
 		err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
+		if compileCacheDir != "" && isCompileCacheError(err) {
+			// The compile failed before the plugin ran: drop the damaged entries
+			// and compile from scratch once instead of failing the run.
+			clearCompileCache(compileCacheDir)
+			err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
+		}
 		if warnings != nil {
 			warnings.Flush()
 		}

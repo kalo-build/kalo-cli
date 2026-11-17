@@ -50,3 +50,20 @@
   - `devspecs/tasks/hq-53/task.json`
 - Tests run:
   - `go vet ./... && go test ./... -count=1; mutation (withCompileCache removed) fails TestSpecRunKeepsCompiledPlugins...; Petstore recipe base 41.1 s / patched cold 29.9 s / warm 2.7 s, outputs diff -r identical`
+
+### Checkpoint
+- Created At: 2026-11-17T14:33:51Z
+- Stage: validated
+- Decision: promote
+- Source: `checkpoints/20261117-143351-validated.md`
+- Structured Evidence: `checkpoints/20261117-143351-validated.json`
+- What changed: -
+- Evidence for decision: 3 file(s) edited; 1 test command(s)
+- What remains: -
+- Next iteration: promote to the next slice
+- Files edited:
+  - `cmd/kalo/spec.go`
+  - `cmd/kalo/spec_compile_cache.go`
+  - `cmd/kalo/spec_compile_cache_test.go`
+- Tests run:
+  - `go vet ./... && go test ./... -count=1 (green); mutations: no cache -> KeepsCompiled fails, no retry -> CorruptCache fails; Petstore --recipe-dir base 43.3/20.0 s, patched 43.9/2.2 s, outputs identical`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/tetratelabs/wazero"
 )
@@ -31,15 +32,32 @@ func wasmCompileCacheDir() string {
 // entries by the module bytes, its own version and the CPU, and spec run only
 // compiles bytes whose digest it has already checked. A cache that can't be
 // opened only costs time, so the run goes on without it. Call close after the
-// runtime is closed.
-func withCompileCache(ctx context.Context, config wazero.RuntimeConfig) (wazero.RuntimeConfig, func()) {
+// runtime is closed. The returned dir is "" when no cache is in use.
+func withCompileCache(ctx context.Context, config wazero.RuntimeConfig) (wazero.RuntimeConfig, string, func()) {
 	dir := wasmCompileCacheDir()
 	if dir == "" {
-		return config, func() {}
+		return config, "", func() {}
 	}
 	cache, err := wazero.NewCompilationCacheWithDir(dir)
 	if err != nil {
-		return config, func() {}
+		return config, "", func() {}
 	}
-	return config.WithCompilationCache(cache), func() { _ = cache.Close(ctx) }
+	return config.WithCompilationCache(cache), dir, func() { _ = cache.Close(ctx) }
+}
+
+// isCompileCacheError reports a compile that failed on a damaged cache entry;
+// wazero returns these instead of recompiling.
+func isCompileCacheError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "compilationcache:")
+}
+
+// clearCompileCache deletes the cached files but keeps the directories, which
+// the open cache expects to exist when it writes the next entry.
+func clearCompileCache(dir string) {
+	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			_ = os.Remove(path)
+		}
+		return nil
+	})
 }
