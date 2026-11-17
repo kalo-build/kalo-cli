@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/tetratelabs/wazero"
@@ -42,6 +44,7 @@ func withCompileCache(ctx context.Context, config wazero.RuntimeConfig) (wazero.
 	if err != nil {
 		return config, "", func() {}
 	}
+	pruneOtherWazeroVersions(dir)
 	return config.WithCompilationCache(cache), dir, func() { _ = cache.Close(ctx) }
 }
 
@@ -60,4 +63,51 @@ func clearCompileCache(dir string) {
 		}
 		return nil
 	})
+}
+
+// currentWazeroCacheDirName is the subdirectory wazero writes into inside the
+// cache dir: "wazero-<version>-<GOARCH>-<GOOS>" (wazero cache.go). The version
+// is read the way wazero reads it, from the build info. "" when unknown.
+func currentWazeroCacheDirName() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	version := ""
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/tetratelabs/wazero" {
+			version = dep.Version
+			if dep.Replace != nil && dep.Replace.Version != "" {
+				version = dep.Replace.Version
+			}
+		}
+	}
+	if version == "" || version == "(devel)" {
+		return ""
+	}
+	return "wazero-" + version + "-" + runtime.GOARCH + "-" + runtime.GOOS
+}
+
+// pruneOtherWazeroVersions deletes the cache subdirectories that older or newer
+// wazero builds (other kalo versions) left for this CPU and OS, so upgrading
+// kalo doesn't keep ~150 MB per old version. Directories for other platforms
+// and anything not named like a wazero cache dir are left alone. Does nothing
+// when the current version can't be told.
+func pruneOtherWazeroVersions(dir string) {
+	current := currentWazeroCacheDirName()
+	if current == "" {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	suffix := "-" + runtime.GOARCH + "-" + runtime.GOOS
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || name == current || !strings.HasPrefix(name, "wazero-") || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(dir, name))
+	}
 }
