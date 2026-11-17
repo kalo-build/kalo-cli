@@ -80,3 +80,16 @@
 - Next iteration: promote to the next slice
 - Tests run:
   - `go test -count=1 ./internal/installsh (runs scripts/test-install.sh, 11/11 ok; mutation with old install.sh fails); page three-line paste with branch install.sh, env -i clean HOME, no sudo`
+
+### Checkpoint
+- Created At: 2026-11-17T14:59:43Z
+- Stage: validated
+- Decision: promote
+- Source: `checkpoints/20261117-145943-validated.md`
+- Structured Evidence: `checkpoints/20261117-145943-validated.json`
+- What changed: -
+- Evidence for decision: 1 test command(s)
+- What remains: -
+- Next iteration: promote to the next slice
+- Tests run:
+  - `go vet ./... && go test -count=1 ./... (green); mutation: markCompiled removed -> TestSpecRunKeepsCompiledPluginsBetweenRunsAndSaysWhatItRuns fails on the warm-run line`

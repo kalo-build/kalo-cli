@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/tetratelabs/wazero"
@@ -42,6 +44,7 @@ func withCompileCache(ctx context.Context, config wazero.RuntimeConfig) (wazero.
 	if err != nil {
 		return config, "", func() {}
 	}
+	pruneOtherWazeroVersions(dir)
 	return config.WithCompilationCache(cache), dir, func() { _ = cache.Close(ctx) }
 }
 
@@ -60,4 +63,88 @@ func clearCompileCache(dir string) {
 		}
 		return nil
 	})
+}
+
+// currentWazeroCacheDirName is the subdirectory wazero writes into inside the
+// cache dir: "wazero-<version>-<GOARCH>-<GOOS>" (wazero cache.go). The version
+// is read the way wazero reads it, from the build info. "" when unknown.
+func currentWazeroCacheDirName() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	version := ""
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/tetratelabs/wazero" {
+			version = dep.Version
+			if dep.Replace != nil && dep.Replace.Version != "" {
+				version = dep.Replace.Version
+			}
+		}
+	}
+	if version == "" || version == "(devel)" {
+		return ""
+	}
+	return "wazero-" + version + "-" + runtime.GOARCH + "-" + runtime.GOOS
+}
+
+// pruneOtherWazeroVersions deletes the cache subdirectories that older or newer
+// wazero builds (other kalo versions) left for this CPU and OS, so upgrading
+// kalo doesn't keep ~150 MB per old version. Directories for other platforms
+// and anything not named like a wazero cache dir are left alone. Does nothing
+// when the current version can't be told.
+func pruneOtherWazeroVersions(dir string) {
+	current := currentWazeroCacheDirName()
+	if current == "" {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	suffix := "-" + runtime.GOARCH + "-" + runtime.GOOS
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || name == current || !strings.HasPrefix(name, "wazero-") || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(dir, name))
+	}
+}
+
+// compiledMarkerPath is an empty file spec run leaves once a plugin with this
+// digest has compiled and run with the cache on. It sits inside wazero's
+// version directory, so pruning that directory or clearing a damaged cache
+// removes it with the compiled code. "" when the cache is off or the wazero
+// version can't be told; callers then assume a compile.
+func compiledMarkerPath(dir, digest string) string {
+	current := currentWazeroCacheDirName()
+	if dir == "" || current == "" || digest == "" {
+		return ""
+	}
+	name := strings.NewReplacer(":", "-", "/", "-", "\\", "-").Replace(digest)
+	return filepath.Join(dir, current, "kalo-compiled", name)
+}
+
+// compiledBefore reports whether this digest already has compiled code in the
+// cache, so the progress line only warns about a wait when there will be one.
+func compiledBefore(dir, digest string) bool {
+	path := compiledMarkerPath(dir, digest)
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// markCompiled records that digest compiled into the cache. Errors only mean
+// the next run warns about a compile again.
+func markCompiled(dir, digest string) {
+	path := compiledMarkerPath(dir, digest)
+	if path == "" {
+		return
+	}
+	if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+		_ = os.WriteFile(path, nil, 0o644)
+	}
 }
