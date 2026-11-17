@@ -159,6 +159,22 @@ host supports local filesystem I/O and WASI Preview 1 only. It rejects required
 state, unknown required extensions, unsupported representation mechanisms, and
 unsafe or open-world effects unless explicitly authorized.
 
+#### Compile cache
+
+`kalo spec run` keeps the compiled machine code of each plugin on disk, so
+only the first run of a plugin pays for compiling it. The cache lives in
+`$KALO_CACHE_DIR/wazero`, or `<user cache dir>/kalo/wazero` when that is unset
+(`~/.cache/kalo/wazero` on Linux, `~/Library/Caches/kalo/wazero` on macOS).
+For the two openapi-sdk plugins it takes about 150 MB on linux/amd64. When kalo
+is upgraded to a build with a different wazero version, the old version's
+directory for the same platform is deleted the next time the cache opens.
+
+- Turn it off: `KALO_NO_COMPILE_CACHE=1`.
+- Clear it: `rm -rf ~/.cache/kalo/wazero` (or the path above).
+- Trust: kalo checks each plugin's digest before compiling it, but machine
+  code loaded from this cache is not checked again. Treat the directory like
+  the `kalo` binary itself: anyone who can write to it can change what runs.
+
 ## Configuration
 
 Kalo CLI uses a YAML configuration file (`kalo.yaml` by default) to define stores, plugins, and pipelines.

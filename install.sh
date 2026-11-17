@@ -9,6 +9,8 @@ set -e
 REPO="kalo-build/kalo-cli"
 BINARY_NAME="kalo"
 INSTALL_DIR="${KALO_INSTALL_DIR:-/usr/local/bin}"
+# Drop a trailing slash so PATH and shadowing checks compare like with like.
+case "$INSTALL_DIR" in ?*/) INSTALL_DIR="${INSTALL_DIR%/}" ;; esac
 
 # Colors for output
 RED='\033[0;31m'
@@ -76,6 +78,17 @@ download() {
     fi
 }
 
+# True if we can write to DIR, or create it: the nearest existing ancestor is writable.
+can_create_in() {
+    d="$1"
+    while [ ! -d "$d" ]; do
+        parent=$(dirname "$d")
+        [ "$parent" = "$d" ] && return 1
+        d="$parent"
+    done
+    [ -w "$d" ]
+}
+
 main() {
     info "Detecting system..."
     OS=$(detect_os)
@@ -109,11 +122,29 @@ main() {
     info "Extracting..."
     tar -xzf "$TMP_DIR/$FILENAME" -C "$TMP_DIR"
 
+    # Without write access and without sudo, fall back to ~/.local/bin
+    # instead of failing on "sudo: not found".
+    NEED_SUDO=0
+    if ! can_create_in "$INSTALL_DIR"; then
+        if command -v sudo >/dev/null 2>&1; then
+            NEED_SUDO=1
+        elif [ -n "${HOME:-}" ] && [ "$INSTALL_DIR" != "$HOME/.local/bin" ] && can_create_in "$HOME/.local/bin"; then
+            warn "$INSTALL_DIR is not writable and sudo is not available. Installing to $HOME/.local/bin instead."
+            INSTALL_DIR="$HOME/.local/bin"
+        else
+            error "$INSTALL_DIR is not writable and sudo is not available. Set KALO_INSTALL_DIR to a directory you can write to and run again."
+        fi
+    fi
+
     info "Installing to $INSTALL_DIR..."
     if [ ! -d "$INSTALL_DIR" ]; then
-        mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"
+        if [ "$NEED_SUDO" -eq 1 ]; then
+            sudo mkdir -p "$INSTALL_DIR"
+        else
+            mkdir -p "$INSTALL_DIR"
+        fi
     fi
-    if [ -w "$INSTALL_DIR" ]; then
+    if [ "$NEED_SUDO" -eq 0 ] && [ -w "$INSTALL_DIR" ]; then
         mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
     else
@@ -125,11 +156,24 @@ main() {
     info "Kalo CLI installed successfully!"
     info "Run 'kalo --help' to get started"
     
-    # Verify installation
-    if command -v kalo >/dev/null 2>&1; then
-        kalo --version
-    else
-        warn "kalo is not in PATH. Add $INSTALL_DIR to your PATH."
+    # Verify the binary we just installed, not whichever kalo comes first in PATH
+    "$INSTALL_DIR/$BINARY_NAME" --version
+
+    FOUND=$(command -v "$BINARY_NAME" 2>/dev/null || true)
+    case ":$PATH:" in
+        *":$INSTALL_DIR:"*) ON_PATH=1 ;;
+        *) ON_PATH=0 ;;
+    esac
+    if [ -n "$FOUND" ] && [ "$FOUND" != "$INSTALL_DIR/$BINARY_NAME" ]; then
+        warn "'kalo' currently runs $FOUND, not the version installed here."
+        if [ "$ON_PATH" -eq 1 ]; then
+            warn "Put $INSTALL_DIR before $(dirname "$FOUND") in your PATH, or remove $FOUND."
+        fi
+    fi
+    # Keep the PATH hint as the last line printed, so it is the one people copy.
+    if [ "$ON_PATH" -eq 0 ]; then
+        warn "$INSTALL_DIR is not in your PATH. Run this, then use kalo:"
+        warn "  export PATH=\"$INSTALL_DIR:\$PATH\""
     fi
 }
 

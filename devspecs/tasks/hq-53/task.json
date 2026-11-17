@@ -1,0 +1,313 @@
+{
+  "task_id": "hq-53",
+  "series": "C",
+  "profile": "code-change",
+  "query": "spec run: persistent wazero compile cache + one stderr progress line (task 51 friction #1)",
+  "status": "packed",
+  "created_at": "2026-11-17T14:16:50Z",
+  "updated_at": "2026-11-17T14:59:43Z",
+  "repo_root": "/data/workspaces/eng1/src/kalo-cli",
+  "workspace": "/data/workspaces/eng1/src/kalo-cli/devspecs/tasks/hq-53",
+  "artifacts": {
+    "series": "C",
+    "index": "C00-index.md",
+    "first_slice": "C01-spec-run-persistent-wazero-compile-cache-one-stderr-progress-plan.md",
+    "result": "C01-spec-run-persistent-wazero-compile-cache-one-stderr-progress-result.md",
+    "slices": [
+      {
+        "id": "C01",
+        "title": "spec run: persistent wazero compile cache + one stderr progress line (task 51 friction #1)",
+        "plan": "C01-spec-run-persistent-wazero-compile-cache-one-stderr-progress-plan.md",
+        "result": "C01-spec-run-persistent-wazero-compile-cache-one-stderr-progress-result.md",
+        "kind": "slice",
+        "stage": "validated",
+        "decision": "promote",
+        "updated_at": "2026-11-17T14:59:43Z",
+        "latest_checkpoint_id": "cp_20261117T145943Z_c01_validated",
+        "latest_checkpoint": "checkpoints/20261117-145943-validated.md",
+        "latest_checkpoint_json": "checkpoints/20261117-145943-validated.json"
+      }
+    ]
+  },
+  "predicted_context": {
+    "relevant_areas": [
+      "cmd/kalo",
+      "internal/specv0"
+    ],
+    "primary_files": [
+      {
+        "path": "cmd/kalo/main.go",
+        "title": "cmd/kalo/main.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in body: cache",
+          "query term match in body: compile",
+          "query term match in body: line",
+          "authority prior: stale or superseded"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec.go",
+        "title": "cmd/kalo/spec.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: spec",
+          "query term match in body: cache",
+          "query term match in body: compile"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_recipe.go",
+        "title": "cmd/kalo/spec_recipe.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: spec",
+          "query term match in body: cache",
+          "query term match in body: compile"
+        ]
+      },
+      {
+        "path": "internal/specv0/value.go",
+        "title": "internal/specv0/value.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: spec",
+          "query term match in body: line",
+          "query term match in body: one"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_memory.go",
+        "title": "cmd/kalo/spec_memory.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: spec",
+          "query term match in body: compile",
+          "query term match in body: line"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_warnings.go",
+        "title": "cmd/kalo/spec_warnings.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in path: spec",
+          "query term match in body: line",
+          "scout source preservation: query roots spec; primary test roots spec; loss-safe source candidate",
+          "bounded body evidence: line=20, run=1; bytes=1345"
+        ]
+      },
+      {
+        "path": "cmd/kalo/wasm_memory_unix.go",
+        "title": "cmd/kalo/wasm_memory_unix.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in body: line",
+          "query term match in body: one",
+          "query term match in body: task"
+        ]
+      },
+      {
+        "path": "internal/specv0/catalog.go",
+        "title": "internal/specv0/catalog.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: spec",
+          "query term match in body: compile"
+        ]
+      }
+    ],
+    "tests": [
+      {
+        "path": "cmd/kalo/spec_memory_test.go",
+        "title": "cmd/kalo/spec_memory_test.go (go)",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: spec",
+          "query term match in body: line"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_recipe_test.go",
+        "title": "cmd/kalo/spec_recipe_test.go (go)",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: spec",
+          "query term match in body: cache"
+        ]
+      },
+      {
+        "path": "internal/specv0/value_test.go#L13",
+        "title": "TestDecodeValueYAMLMatchesJSON",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in path: spec",
+          "query term match in body: line"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_stage_test.go",
+        "title": "cmd/kalo/spec_stage_test.go (go)",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_relationship_recovery",
+          "query term match in path: spec",
+          "query term match in body: line"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main_test.go#L14",
+        "title": "TestCLI_RootHelp",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_relationship_recovery",
+          "query term match in body: line",
+          "query term match in body: run"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_warnings_test.go",
+        "title": "cmd/kalo/spec_warnings_test.go (go)",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in path: spec",
+          "query term match in body: line"
+        ]
+      },
+      {
+        "path": "cmd/kalo/wasm_memory_unix_test.go#L10",
+        "title": "TestReservedLinearMemoryGrowsInPlace",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: test_companion",
+          "pack tier: related (test_companion)",
+          "query term match in title: line"
+        ]
+      }
+    ],
+    "noise_risks": [
+      {
+        "path": "cmd/kalo/testdata/specrun/plugin/main.go",
+        "title": "cmd/kalo/testdata/specrun/plugin/main.go (go)",
+        "kind": "source_context",
+        "role": "excluded_noise",
+        "evidence": [
+          "query term match in path: run",
+          "query term match in path: spec",
+          "query term match in body: line",
+          "authority prior: stale or superseded"
+        ]
+      }
+    ],
+    "related_git_receipts": [
+      {
+        "sha": "aaf859cb6fa6e7c5ba53740f50f31c32be2ce57d",
+        "short_sha": "aaf859c",
+        "committed_at": "2026-11-14",
+        "subject": "spec run: reserve plugin memory, default cap from free memory, one-line OOM",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/spec.go",
+          "cmd/kalo/spec_memory.go"
+        ],
+        "matched_terms": [
+          "wazero",
+          "stderr",
+          "line",
+          "spec"
+        ],
+        "signals": [
+          "touched 4 packed path(s)",
+          "matched query anchors",
+          "PR/issue reference",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "f874e8f64b2f2b6dce38f98e8301190c7d849f21",
+        "short_sha": "f874e8f",
+        "committed_at": "2026-11-14",
+        "subject": "feat(spec): YAML values, file-set outputs and KALO:PLUGIN-IO for kalo spec run",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/spec.go",
+          "internal/specv0/catalog.go"
+        ],
+        "matched_terms": [
+          "stderr",
+          "spec"
+        ],
+        "signals": [
+          "touched 4 packed path(s)",
+          "matched query anchors",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "cfffb4a14547f609e6f7c61500fc1714fa8453f9",
+        "short_sha": "cfffb4a",
+        "committed_at": "2026-11-14",
+        "subject": "spec run: forward plugin warning: lines in quiet recipe runs (#10)",
+        "matched_paths": [
+          "cmd/kalo/spec.go",
+          "cmd/kalo/spec_warnings.go"
+        ],
+        "matched_terms": [
+          "stderr",
+          "line",
+          "spec"
+        ],
+        "signals": [
+          "touched 2 packed path(s)",
+          "matched query anchors",
+          "PR/issue reference",
+          "cross-file change"
+        ]
+      }
+    ]
+  },
+  "confidence": {
+    "primary_file_confidence": "high",
+    "test_coverage_confidence": "high",
+    "docs_config_confidence": "low",
+    "git_receipt_confidence": "high",
+    "noise_risk": "medium",
+    "pack_completeness": "medium",
+    "why": [
+      "found 8 likely primary file(s)",
+      "found 7 likely test file(s)",
+      "found 3 related Git receipt(s)",
+      "1 file(s) were downgraded as likely noise"
+    ],
+    "agent_instruction": "Validate the test and integration surface before editing. Record critical misses and distracting inclusions in the slice result or a task checkpoint."
+  },
+  "durability": {}
+}
