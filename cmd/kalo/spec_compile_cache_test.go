@@ -52,13 +52,16 @@ func TestSpecRunKeepsCompiledPluginsBetweenRunsAndSaysWhatItRuns(t *testing.T) {
 	first.Progress = &progress
 	firstResult, err := runSPEC(first)
 	require.NoError(t, err)
-	require.Equal(t, "kalo: running KALOX:OPENAPI-TO-TS-SDK@1; the first run compiles the plugin and can take a minute\n", progress.String())
+	require.Equal(t, "kalo: running KALOX:OPENAPI-TO-TS-SDK@1; compiling the plugin first, this can take a minute\n", progress.String())
 	entries := countFiles(t, compiled)
 	require.Greater(t, entries, 0, "first run must leave compiled code in %s", compiled)
 
 	second := fixtureRunOptions(root, filepath.Join(t.TempDir(), "out"))
+	var warmProgress bytes.Buffer
+	second.Progress = &warmProgress
 	secondResult, err := runSPEC(second)
 	require.NoError(t, err)
+	require.Equal(t, "kalo: running KALOX:OPENAPI-TO-TS-SDK@1\n", warmProgress.String(), "a warm run must not promise a compile")
 	require.Equal(t, entries, countFiles(t, compiled), "second run must reuse the entry, not add one")
 	firstOut, err := os.ReadFile(filepath.Join(first.Output, filepath.FromSlash(firstResult.Output)))
 	require.NoError(t, err)

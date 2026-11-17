@@ -111,3 +111,40 @@ func pruneOtherWazeroVersions(dir string) {
 		_ = os.RemoveAll(filepath.Join(dir, name))
 	}
 }
+
+// compiledMarkerPath is an empty file spec run leaves once a plugin with this
+// digest has compiled and run with the cache on. It sits inside wazero's
+// version directory, so pruning that directory or clearing a damaged cache
+// removes it with the compiled code. "" when the cache is off or the wazero
+// version can't be told; callers then assume a compile.
+func compiledMarkerPath(dir, digest string) string {
+	current := currentWazeroCacheDirName()
+	if dir == "" || current == "" || digest == "" {
+		return ""
+	}
+	name := strings.NewReplacer(":", "-", "/", "-", "\\", "-").Replace(digest)
+	return filepath.Join(dir, current, "kalo-compiled", name)
+}
+
+// compiledBefore reports whether this digest already has compiled code in the
+// cache, so the progress line only warns about a wait when there will be one.
+func compiledBefore(dir, digest string) bool {
+	path := compiledMarkerPath(dir, digest)
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// markCompiled records that digest compiled into the cache. Errors only mean
+// the next run warns about a compile again.
+func markCompiled(dir, digest string) {
+	path := compiledMarkerPath(dir, digest)
+	if path == "" {
+		return
+	}
+	if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+		_ = os.WriteFile(path, nil, 0o644)
+	}
+}

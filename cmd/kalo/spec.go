@@ -385,7 +385,11 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 			if len(route.Steps) > 1 {
 				stepOf = fmt.Sprintf(" (step %d/%d)", index+1, len(route.Steps))
 			}
-			fmt.Fprintf(options.Progress, "kalo: running %s%s; the first run compiles the plugin and can take a minute\n", step.ProcessorAddress, stepOf)
+			wait := "; compiling the plugin first, this can take a minute"
+			if compiledBefore(compileCacheDir, step.Implementation.Artifact.Digest) {
+				wait = ""
+			}
+			fmt.Fprintf(options.Progress, "kalo: running %s%s%s\n", step.ProcessorAddress, stepOf, wait)
 		}
 		stageStarted := time.Now().UTC()
 		pluginCtx := ctx
@@ -411,6 +415,9 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 			// and compile from scratch once instead of failing the run.
 			clearCompileCache(compileCacheDir)
 			err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
+		}
+		if err == nil && compileCacheDir != "" {
+			markCompiled(compileCacheDir, step.Implementation.Artifact.Digest)
 		}
 		if warnings != nil {
 			warnings.Flush()
