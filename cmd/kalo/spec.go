@@ -311,8 +311,8 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 	if memoryLimit.MiB > 0 {
 		runtimeConfig = runtimeConfig.WithMemoryLimitPages(memoryLimit.MiB * 16)
 	}
-	runtimeConfig, compileCacheDir, closeCompileCache := withCompileCache(ctx, runtimeConfig, options.CompileCacheSubdir)
-	defer closeCompileCache() // deferred first, so it runs after wasmRuntime.Close
+	runtimeConfig, compileCache := withCompileCache(ctx, runtimeConfig, options.CompileCacheSubdir)
+	defer compileCache.Close(ctx) // deferred first, so it runs after wasmRuntime.Close
 	wasmRuntime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer wasmRuntime.Close(ctx)
 	wasi_snapshot_preview1.MustInstantiate(ctx, wasmRuntime)
@@ -390,7 +390,7 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 				stepOf = fmt.Sprintf(" (step %d/%d)", index+1, len(route.Steps))
 			}
 			wait := "; compiling the plugin first, this can take a minute"
-			if compiledBefore(compileCacheDir, step.Implementation.Artifact.Digest) {
+			if compiledBefore(compileCache.Dir(), step.Implementation.Artifact.Digest) {
 				wait = ""
 			}
 			fmt.Fprintf(options.Progress, "kalo: running %s%s%s\n", step.ProcessorAddress, stepOf, wait)
@@ -414,14 +414,14 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		}
 		stagePolicy.PluginOutput = pluginLog
 		err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
-		if compileCacheDir != "" && isCompileCacheError(err) {
+		if compileCache != nil && isCompileCacheError(err) {
 			// The compile failed before the plugin ran: drop the damaged entries
 			// and compile from scratch once instead of failing the run.
-			clearCompileCache(compileCacheDir)
+			compileCache.Clear()
 			err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
 		}
-		if err == nil && compileCacheDir != "" {
-			markCompiled(compileCacheDir, step.Implementation.Artifact.Digest)
+		if err == nil {
+			compileCache.MarkCompiled(step.Implementation.Artifact.Digest)
 		}
 		if warnings != nil {
 			warnings.Flush()
