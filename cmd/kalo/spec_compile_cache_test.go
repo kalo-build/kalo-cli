@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,7 +47,7 @@ func TestSpecRunKeepsCompiledPluginsBetweenRunsAndSaysWhatItRuns(t *testing.T) {
 	t.Setenv("KALO_CACHE_DIR", cacheRoot)
 	t.Setenv("KALO_NO_COMPILE_CACHE", "")
 	root := buildFixtureCatalog(t, nil)
-	compiled := filepath.Join(cacheRoot, "wazero")
+	compiled := filepath.Join(cacheRoot, "compiled", "route")
 
 	var progress bytes.Buffer
 	first := fixtureRunOptions(root, filepath.Join(t.TempDir(), "out"))
@@ -78,14 +80,15 @@ func TestSpecRunCompileCacheCanBeTurnedOff(t *testing.T) {
 
 	_, err := runSPEC(fixtureRunOptions(root, filepath.Join(t.TempDir(), "out")))
 	require.NoError(t, err)
-	require.Equal(t, 0, countFiles(t, filepath.Join(cacheRoot, "wazero")))
+	require.Equal(t, 0, countFiles(t, filepath.Join(cacheRoot, "compiled", "route")))
 }
 
 func TestSpecRunWithoutCacheWhenCacheDirIsReadOnly(t *testing.T) {
 	cacheRoot := t.TempDir()
 	t.Setenv("KALO_CACHE_DIR", cacheRoot)
 	t.Setenv("KALO_NO_COMPILE_CACHE", "")
-	compiled := filepath.Join(cacheRoot, "wazero")
+	compiled := filepath.Join(cacheRoot, "compiled", "route")
+	require.NoError(t, os.MkdirAll(filepath.Dir(compiled), 0o755))
 	require.NoError(t, os.MkdirAll(compiled, 0o555))
 	t.Cleanup(func() { os.Chmod(compiled, 0o755) })
 	root := buildFixtureCatalog(t, nil)
@@ -105,7 +108,7 @@ func TestSpecRunRecompilesOverACorruptCache(t *testing.T) {
 	require.NoError(t, err)
 
 	corrupted := 0
-	require.NoError(t, filepath.WalkDir(filepath.Join(cacheRoot, "wazero"), func(path string, entry os.DirEntry, err error) error {
+	require.NoError(t, filepath.WalkDir(filepath.Join(cacheRoot, "compiled", "route"), func(path string, entry os.DirEntry, err error) error {
 		if err == nil && !entry.IsDir() {
 			corrupted++
 			return os.WriteFile(path, []byte("not a compiled module"), 0o644)
@@ -128,7 +131,7 @@ func TestCompileCacheDropsOtherWazeroVersionsForThisPlatform(t *testing.T) {
 	cacheRoot := t.TempDir()
 	t.Setenv("KALO_CACHE_DIR", cacheRoot)
 	t.Setenv("KALO_NO_COMPILE_CACHE", "")
-	compiled := filepath.Join(cacheRoot, "wazero")
+	compiled := filepath.Join(cacheRoot, "compiled", "route")
 	current := currentWazeroCacheDirName()
 	require.NotEmpty(t, current, "wazero version not found in build info")
 
@@ -144,7 +147,7 @@ func TestCompileCacheDropsOtherWazeroVersionsForThisPlatform(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "entry"), []byte("x"), 0o644))
 	}
 
-	_, dir, closeCache := withCompileCache(context.Background(), wazero.NewRuntimeConfig())
+	_, dir, closeCache := withCompileCache(context.Background(), wazero.NewRuntimeConfig(), "")
 	closeCache()
 	require.Equal(t, compiled, dir)
 
@@ -152,4 +155,62 @@ func TestCompileCacheDropsOtherWazeroVersionsForThisPlatform(t *testing.T) {
 	require.NoDirExists(t, old)
 	require.DirExists(t, foreign)
 	require.DirExists(t, unrelated)
+}
+
+func TestRecipeRunKeepsOneVersionDropsOldCacheAndPrintsCacheLineOnce(t *testing.T) {
+	root := buildFixtureRecipe(t)
+	archive := tarGzDir(t, root, nil)
+	serveRecipe(t, archive, fmt.Sprintf("%x", sha256.Sum256(archive)))
+	t.Setenv("KALO_NO_COMPILE_CACHE", "")
+	cacheRoot := os.Getenv("KALO_CACHE_DIR")
+
+	// Left by an older recipe version, by agent.4's shared compile cache, and
+	// by another recipe (must stay).
+	stale := []string{
+		filepath.Join(cacheRoot, "recipes", "fixture", "0.0.9"),
+		filepath.Join(cacheRoot, "compiled", "recipe", "fixture", "0.0.9"),
+		filepath.Join(cacheRoot, "wazero", "wazero-v1.9.0-amd64-linux"),
+	}
+	kept := []string{
+		filepath.Join(cacheRoot, "recipes", "other", "1.0.0"),
+		filepath.Join(cacheRoot, "recipes", "fixture", ".fetch-123"),
+	}
+	for _, dir := range append(append([]string{}, stale...), kept...) {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "entry"), []byte("x"), 0o644))
+	}
+
+	var progress bytes.Buffer
+	options := recipeRunOptions{Name: "fixture", Input: userInput(t, root), Out: filepath.Join(t.TempDir(), "sdk")}
+	options.Run.Progress = &progress
+	_, err := runRecipe(options)
+	require.NoError(t, err)
+	for _, dir := range stale {
+		require.NoDirExists(t, dir)
+	}
+	for _, dir := range kept {
+		require.DirExists(t, dir)
+	}
+	compiled := filepath.Join(cacheRoot, "compiled", "recipe", "fixture", "0.1.0")
+	require.Greater(t, countFiles(t, compiled), 0, "a recipe compiles into its own version dir")
+	line := fmt.Sprintf("kalo: cached %s in %s (plugins %s, compiled code %s) so later runs skip compiling.",
+		formatMB(treeBytes(filepath.Join(cacheRoot, "recipes"))+treeBytes(filepath.Join(cacheRoot, "compiled"))), cacheRoot,
+		formatMB(treeBytes(filepath.Join(cacheRoot, "recipes"))), formatMB(treeBytes(filepath.Join(cacheRoot, "compiled"))))
+	require.Contains(t, progress.String(), line, "sizes come from disk")
+	require.Contains(t, progress.String(), "Delete the folder any time")
+	require.NotContains(t, progress.String(), " s ", "no seconds in the line")
+
+	// Nothing new cached: no line.
+	var warm bytes.Buffer
+	again := recipeRunOptions{Name: "fixture", Version: "0.1.0", Input: userInput(t, root), Out: filepath.Join(t.TempDir(), "sdk")}
+	again.Run.Progress = &warm
+	_, err = runRecipe(again)
+	require.NoError(t, err)
+	require.NotContains(t, warm.String(), "kalo: cached")
+}
+
+func TestFormatMB(t *testing.T) {
+	require.Equal(t, "<0.1 MB", formatMB(99_999))
+	require.Equal(t, "4.2 MB", formatMB(4_200_000))
+	require.Equal(t, "153 MB", formatMB(153_307_006))
 }

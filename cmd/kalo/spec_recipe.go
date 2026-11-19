@@ -165,13 +165,9 @@ func resolveRecipe(options recipeRunOptions) (string, error) {
 	if !recipeVersionPattern.MatchString(version) {
 		return "", fmt.Errorf("invalid recipe version %q", version)
 	}
-	cacheRoot := os.Getenv("KALO_CACHE_DIR")
-	if cacheRoot == "" {
-		userCache, err := os.UserCacheDir()
-		if err != nil {
-			return "", fmt.Errorf("find cache directory (set KALO_CACHE_DIR): %w", err)
-		}
-		cacheRoot = filepath.Join(userCache, "kalo")
+	cacheRoot, err := kaloCacheRoot()
+	if err != nil {
+		return "", err
 	}
 	target := filepath.Join(cacheRoot, "recipes", options.Name, version)
 	if _, err := os.Stat(filepath.Join(target, recipeFileName)); err == nil {
@@ -424,9 +420,21 @@ func requireEmptyOrMissing(dir, flag string, force bool) error {
 // dirs, staged values, receipts) are removed on success and on failure; only
 // --receipts and --keep-specs keep anything else.
 func runRecipe(options recipeRunOptions) (*recipeRunResult, error) {
+	// Bytes in the cache before the run: the cache line prints only when the
+	// run added some (a fetch or a compile).
+	cacheRoot, cacheErr := kaloCacheRoot()
+	var cacheBefore int64
+	if cacheErr == nil {
+		cacheBefore = treeBytes(filepath.Join(cacheRoot, "recipes")) + treeBytes(filepath.Join(cacheRoot, "compiled"))
+	}
 	recipeRoot, err := resolveRecipe(options)
 	if err != nil {
 		return nil, err
+	}
+	if options.LocalCatalog == "" && cacheErr == nil {
+		version := filepath.Base(recipeRoot)
+		pruneRecipeVersions(cacheRoot, options.Name, version)
+		options.Run.CompileCacheSubdir = recipeCompileCacheSubdir(options.Name, version)
 	}
 	manifest, err := loadRecipeManifest(recipeRoot)
 	if err != nil {
@@ -546,6 +554,11 @@ func runRecipe(options recipeRunOptions) (*recipeRunResult, error) {
 		}
 		if err := os.Rename(filepath.Join(staged, output.Dir), dest); err != nil {
 			return nil, err
+		}
+	}
+	if cacheErr == nil && options.Run.Progress != nil {
+		if treeBytes(filepath.Join(cacheRoot, "recipes"))+treeBytes(filepath.Join(cacheRoot, "compiled")) > cacheBefore {
+			printCacheLine(options.Run.Progress, cacheRoot)
 		}
 	}
 	return result, nil

@@ -95,6 +95,10 @@ type specRunOptions struct {
 	// Progress, when set, gets one line per step before it starts, so a
 	// cold run that spends most of a minute compiling is not silent.
 	Progress io.Writer
+	// CompileCacheSubdir is the compile cache directory relative to the cache
+	// root; "" means the shared route directory. Recipe runs use one per
+	// recipe version so pruning a version drops its compiled code.
+	CompileCacheSubdir string
 }
 
 func specRunCommand() *cobra.Command {
@@ -307,7 +311,7 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 	if memoryLimit.MiB > 0 {
 		runtimeConfig = runtimeConfig.WithMemoryLimitPages(memoryLimit.MiB * 16)
 	}
-	runtimeConfig, compileCacheDir, closeCompileCache := withCompileCache(ctx, runtimeConfig)
+	runtimeConfig, compileCacheDir, closeCompileCache := withCompileCache(ctx, runtimeConfig, options.CompileCacheSubdir)
 	defer closeCompileCache() // deferred first, so it runs after wasmRuntime.Close
 	wasmRuntime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer wasmRuntime.Close(ctx)
