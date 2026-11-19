@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,23 +13,58 @@ import (
 	"github.com/tetratelabs/wazero"
 )
 
+// kaloCacheRoot is the folder that holds everything spec run caches: fetched
+// recipes (recipes/) and compiled plugin code (compiled/).
+func kaloCacheRoot() (string, error) {
+	if root := os.Getenv("KALO_CACHE_DIR"); root != "" {
+		return root, nil
+	}
+	userCache, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("find cache directory (set KALO_CACHE_DIR): %w", err)
+	}
+	return filepath.Join(userCache, "kalo"), nil
+}
+
+// compileCacheOff reports KALO_NO_COMPILE_CACHE set to anything but "" or "0".
+func compileCacheOff() bool {
+	value := os.Getenv("KALO_NO_COMPILE_CACHE")
+	return value != "" && value != "0"
+}
+
+// recipeCompileCacheSubdir is where a fetched recipe's compiled plugins live,
+// relative to the cache root, next to recipes/<name>/<version>. One directory
+// per recipe version lets pruneRecipeVersions drop a version's compiled code
+// with its plugins, without knowing wazero's file names.
+func recipeCompileCacheSubdir(name, version string) string {
+	return filepath.Join("compiled", "recipe", name, version)
+}
+
+// routeCompileCacheSubdir holds compiled code for route runs and recipes run
+// from a local folder.
+const routeCompileCacheSubdir = "compiled/route"
+
+// legacyCompileCacheSubdir is where builds up to v0.2.0-agent.4 kept every
+// compiled plugin in one directory; nothing reads it any more.
+const legacyCompileCacheSubdir = "wazero"
+
 // wasmCompileCacheDir is where spec run keeps compiled plugin machine code
-// between runs, next to the recipe cache. Compiling a ~20 MB Go plugin takes
-// most of a cold run; without this every run paid it again. An empty result
-// disables the cache (KALO_NO_COMPILE_CACHE=1, or no cache directory).
-func wasmCompileCacheDir() string {
-	if value := os.Getenv("KALO_NO_COMPILE_CACHE"); value != "" && value != "0" {
+// between runs. Compiling a ~20 MB Go plugin takes most of a cold run; without
+// this every run paid it again. subdir is relative to the cache root ("" for
+// the route directory). An empty result disables the cache
+// (KALO_NO_COMPILE_CACHE=1, or no cache directory).
+func wasmCompileCacheDir(subdir string) string {
+	if compileCacheOff() {
 		return ""
 	}
-	root := os.Getenv("KALO_CACHE_DIR")
-	if root == "" {
-		userCache, err := os.UserCacheDir()
-		if err != nil {
-			return ""
-		}
-		root = filepath.Join(userCache, "kalo")
+	root, err := kaloCacheRoot()
+	if err != nil {
+		return ""
 	}
-	return filepath.Join(root, "wazero")
+	if subdir == "" {
+		subdir = routeCompileCacheSubdir
+	}
+	return filepath.Join(root, filepath.FromSlash(subdir))
 }
 
 // withCompileCache adds the on-disk compilation cache to config. wazero keys
@@ -35,8 +72,8 @@ func wasmCompileCacheDir() string {
 // compiles bytes whose digest it has already checked. A cache that can't be
 // opened only costs time, so the run goes on without it. Call close after the
 // runtime is closed. The returned dir is "" when no cache is in use.
-func withCompileCache(ctx context.Context, config wazero.RuntimeConfig) (wazero.RuntimeConfig, string, func()) {
-	dir := wasmCompileCacheDir()
+func withCompileCache(ctx context.Context, config wazero.RuntimeConfig, subdir string) (wazero.RuntimeConfig, string, func()) {
+	dir := wasmCompileCacheDir(subdir)
 	if dir == "" {
 		return config, "", func() {}
 	}
@@ -45,7 +82,99 @@ func withCompileCache(ctx context.Context, config wazero.RuntimeConfig) (wazero.
 		return config, "", func() {}
 	}
 	pruneOtherWazeroVersions(dir)
+	if root, err := kaloCacheRoot(); err == nil {
+		_ = os.RemoveAll(filepath.Join(root, legacyCompileCacheSubdir))
+	}
 	return config.WithCompilationCache(cache), dir, func() { _ = cache.Close(ctx) }
+}
+
+// pruneRecipeVersions keeps one version of a fetched recipe: it deletes the
+// other versions' plugins (recipes/<name>/<v>) and compiled code
+// (compiled/recipe/<name>/<v>). Without it every recipe bump left ~195 MB
+// behind. Fetch staging dirs (".fetch-*") and other recipes are left alone.
+// Errors only leave bytes on disk.
+func pruneRecipeVersions(root, name, keep string) {
+	for _, parent := range []string{filepath.Join(root, "recipes", name), filepath.Join(root, "compiled", "recipe", name)} {
+		entries, err := os.ReadDir(parent)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || entry.Name() == keep || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			_ = os.RemoveAll(filepath.Join(parent, entry.Name()))
+		}
+	}
+}
+
+// recipeVersionBytes returns, per version of a fetched recipe, the bytes of its
+// plugins (recipes/<name>/<v>) plus its compiled code (compiled/recipe/<name>/<v>).
+func recipeVersionBytes(root, name string) map[string]int64 {
+	sizes := map[string]int64{}
+	for _, parent := range []string{filepath.Join(root, "recipes", name), filepath.Join(root, "compiled", "recipe", name)} {
+		entries, err := os.ReadDir(parent)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+				sizes[entry.Name()] += treeBytes(filepath.Join(parent, entry.Name()))
+			}
+		}
+	}
+	return sizes
+}
+
+// treeBytes sums the sizes of the regular files under root (0 if missing).
+func treeBytes(root string) int64 {
+	var total int64
+	_ = filepath.WalkDir(root, func(_ string, entry os.DirEntry, err error) error {
+		if err == nil && entry.Type().IsRegular() {
+			if info, err := entry.Info(); err == nil {
+				total += info.Size()
+			}
+		}
+		return nil
+	})
+	return total
+}
+
+// formatMB prints bytes as decimal megabytes: "153 MB", "4.2 MB", "<0.1 MB".
+func formatMB(bytes int64) string {
+	mb := float64(bytes) / 1e6
+	switch {
+	case mb < 0.1:
+		return "<0.1 MB"
+	case mb < 10:
+		return fmt.Sprintf("%.1f MB", mb)
+	default:
+		return fmt.Sprintf("%.0f MB", mb)
+	}
+}
+
+// displayPath shortens a path under the home directory to ~/...
+func displayPath(path string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if rel, err := filepath.Rel(home, path); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			return "~" + string(filepath.Separator) + rel
+		}
+	}
+	return path
+}
+
+// printCacheLine tells, once after a run that added bytes to the cache, what
+// the cache holds and how to delete it. Sizes are read from disk.
+func printCacheLine(w io.Writer, root string) {
+	recipes := treeBytes(filepath.Join(root, "recipes"))
+	compiled := treeBytes(filepath.Join(root, "compiled"))
+	if compileCacheOff() || compiled == 0 {
+		fmt.Fprintf(w, "kalo: cached %s of plugins in %s so later runs skip the download. Delete the folder any time.\n",
+			formatMB(recipes), displayPath(root))
+		return
+	}
+	fmt.Fprintf(w, "kalo: cached %s in %s (plugins %s, compiled code %s) so later runs skip compiling. Delete the folder any time; KALO_NO_COMPILE_CACHE=1 keeps compiled code off disk (every run compiles).\n",
+		formatMB(recipes+compiled), displayPath(root), formatMB(recipes), formatMB(compiled))
 }
 
 // isCompileCacheError reports a compile that failed on a damaged cache entry;

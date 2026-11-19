@@ -159,18 +159,28 @@ host supports local filesystem I/O and WASI Preview 1 only. It rejects required
 state, unknown required extensions, unsupported representation mechanisms, and
 unsafe or open-world effects unless explicitly authorized.
 
-#### Compile cache
+#### Cache
 
-`kalo spec run` keeps the compiled machine code of each plugin on disk, so
-only the first run of a plugin pays for compiling it. The cache lives in
-`$KALO_CACHE_DIR/wazero`, or `<user cache dir>/kalo/wazero` when that is unset
-(`~/.cache/kalo/wazero` on Linux, `~/Library/Caches/kalo/wazero` on macOS).
-For the two openapi-sdk plugins it takes about 150 MB on linux/amd64. When kalo
-is upgraded to a build with a different wazero version, the old version's
-directory for the same platform is deleted the next time the cache opens.
+`kalo spec run` keeps two things on disk under `$KALO_CACHE_DIR`, or
+`<user cache dir>/kalo` when that is unset (`~/.cache/kalo` on Linux,
+`~/Library/Caches/kalo` on macOS):
 
-- Turn it off: `KALO_NO_COMPILE_CACHE=1`.
-- Clear it: `rm -rf ~/.cache/kalo/wazero` (or the path above).
+- `recipes/<name>/<version>`: the fetched recipe (about 42 MB for openapi-sdk).
+- `compiled/recipe/<name>/<version>`: the compiled machine code of the
+  recipe's plugins (about 153 MB for openapi-sdk on linux/amd64), so only the
+  first run pays for compiling. Route runs and recipes run from a local folder
+  use `compiled/route`.
+
+Only one version of each recipe is kept: a run of another version deletes the
+other versions' `recipes/` and `compiled/` directories. A run that fetches
+or compiles the recipe version it runs prints one line with the sizes read
+from disk, also when the versions it deleted were larger. When kalo is
+upgraded to a build with a different wazero version, the old version's
+compiled code for the same platform is deleted the next time the cache opens;
+the `wazero/` directory left by v0.2.0-agent.4 and older is deleted too.
+
+- Turn compiled code off: `KALO_NO_COMPILE_CACHE=1` (every run compiles).
+- Clear it: `rm -rf ~/.cache/kalo` (or the path above).
 - Trust: kalo checks each plugin's digest before compiling it, but machine
   code loaded from this cache is not checked again. Treat the directory like
   the `kalo` binary itself: anyone who can write to it can change what runs.
