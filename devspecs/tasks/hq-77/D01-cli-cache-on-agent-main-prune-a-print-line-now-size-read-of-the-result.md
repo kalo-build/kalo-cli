@@ -62,3 +62,20 @@
   - `cmd/kalo/spec_recipe.go`
 - Tests run:
   - `go test ./... (all ok); TestRecipeRunKeepsOneVersion fails on 2c449d4 code, passes with fix`
+
+### Checkpoint
+- Created At: 2026-11-19T08:42:59Z
+- Stage: validated
+- Decision: promote
+- Source: `checkpoints/20261119-084259-validated.md`
+- Structured Evidence: `checkpoints/20261119-084259-validated.json`
+- What changed: -
+- Evidence for decision: 3 file(s) edited; 1 test command(s)
+- What remains: -
+- Next iteration: promote to the next slice
+- Files edited:
+  - `cmd/kalo/spec.go`
+  - `cmd/kalo/spec_compile_cache.go`
+  - `cmd/kalo/spec_compile_cache_test.go`
+- Tests run:
+  - `go test ./...`

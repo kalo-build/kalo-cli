@@ -5,7 +5,7 @@
   "query": "CLI cache on agent-main: prune (A) + print line now; size read of the 21 MB wasm; then compress at rest (B) against bars",
   "status": "packed",
   "created_at": "2026-11-19T08:13:01Z",
-  "updated_at": "2026-11-19T08:28:01Z",
+  "updated_at": "2026-11-19T08:42:59Z",
   "repo_root": "/data/workspaces/eng_head/kalo-cli",
   "workspace": "/data/workspaces/eng_head/kalo-cli/devspecs/tasks/hq-77",
   "artifacts": {
@@ -22,10 +22,10 @@
         "kind": "slice",
         "stage": "validated",
         "decision": "promote",
-        "updated_at": "2026-11-19T08:28:01Z",
-        "latest_checkpoint_id": "cp_20261119T082801Z_d01_validated",
-        "latest_checkpoint": "checkpoints/20261119-082801-validated.md",
-        "latest_checkpoint_json": "checkpoints/20261119-082801-validated.json"
+        "updated_at": "2026-11-19T08:42:59Z",
+        "latest_checkpoint_id": "cp_20261119T084259Z_d01_validated",
+        "latest_checkpoint": "checkpoints/20261119-084259-validated.md",
+        "latest_checkpoint_json": "checkpoints/20261119-084259-validated.json"
       }
     ]
   },

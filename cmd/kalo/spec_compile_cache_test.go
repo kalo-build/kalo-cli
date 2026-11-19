@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -147,11 +148,15 @@ func TestCompileCacheDropsOtherWazeroVersionsForThisPlatform(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "entry"), []byte("x"), 0o644))
 	}
 
-	_, dir, closeCache := withCompileCache(context.Background(), wazero.NewRuntimeConfig(), "")
-	closeCache()
-	require.Equal(t, compiled, dir)
+	_, cache := withCompileCache(context.Background(), wazero.NewRuntimeConfig(), "")
+	require.NotNil(t, cache)
+	require.Equal(t, compiled, cache.Dir())
+	require.DirExists(t, filepath.Join(cache.work, current), "our name must match the dir wazero creates")
+	require.NoError(t, os.WriteFile(filepath.Join(cache.work, current, "entry"), []byte("x"), 0o644))
+	cache.Close(context.Background())
 
-	require.DirExists(t, filepath.Join(compiled, current), "our name must match the dir wazero creates")
+	require.FileExists(t, filepath.Join(compiled, current, "entry.gz"), "new entries rest packed")
+	require.NoDirExists(t, cache.work, "the work dir goes with the run")
 	require.NoDirExists(t, old)
 	require.DirExists(t, foreign)
 	require.DirExists(t, unrelated)
@@ -231,4 +236,77 @@ func TestFormatMB(t *testing.T) {
 	require.Equal(t, "<0.1 MB", formatMB(99_999))
 	require.Equal(t, "4.2 MB", formatMB(4_200_000))
 	require.Equal(t, "153 MB", formatMB(153_307_006))
+}
+
+// Task 77 B: compiled code rests gzip-packed; each run unpacks into its own
+// work dir under the cache root and deletes it; plain entries from older
+// builds are packed; files left by a killed run are removed.
+func TestSpecRunCompileCacheRestsPackedAndCleansUp(t *testing.T) {
+	cacheRoot := t.TempDir()
+	t.Setenv("KALO_CACHE_DIR", cacheRoot)
+	t.Setenv("KALO_NO_COMPILE_CACHE", "")
+	root := buildFixtureCatalog(t, nil)
+	compiled := filepath.Join(cacheRoot, "compiled", "route")
+	entries := func() (packed, plain []string) {
+		_ = filepath.WalkDir(compiled, func(path string, entry os.DirEntry, err error) error {
+			rel, _ := filepath.Rel(compiled, path)
+			if err == nil && entry.Type().IsRegular() && isWazeroEntry(rel) {
+				if strings.HasSuffix(rel, compressedSuffix) {
+					packed = append(packed, rel)
+				} else {
+					plain = append(plain, rel)
+				}
+			}
+			return nil
+		})
+		return
+	}
+	noRunDirs := func() {
+		left, err := filepath.Glob(filepath.Join(cacheRoot, "compiled", ".run-*"))
+		require.NoError(t, err)
+		require.Empty(t, left, "no work dir may outlive its run")
+	}
+	runOnce := func() string {
+		options := fixtureRunOptions(root, filepath.Join(t.TempDir(), "out"))
+		var progress bytes.Buffer
+		options.Progress = &progress
+		result, err := runSPEC(options)
+		require.NoError(t, err)
+		out, err := os.ReadFile(filepath.Join(options.Output, filepath.FromSlash(result.Output)))
+		require.NoError(t, err)
+		return progress.String() + string(out)
+	}
+
+	first := runOnce()
+	packed, plain := entries()
+	require.NotEmpty(t, packed)
+	require.Empty(t, plain, "compiled code must rest packed")
+	noRunDirs()
+
+	// A build before B left plain entries: they are used and packed.
+	for _, rel := range packed {
+		require.NoError(t, gunzipFile(filepath.Join(compiled, rel), filepath.Join(compiled, strings.TrimSuffix(rel, compressedSuffix))))
+		require.NoError(t, os.Remove(filepath.Join(compiled, rel)))
+	}
+	// A killed run left its work dir and a half-packed file.
+	deadPID := 999999999
+	killedWork := filepath.Join(cacheRoot, "compiled", fmt.Sprintf(".run-%d-1", deadPID))
+	require.NoError(t, os.MkdirAll(killedWork, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(killedWork, "big"), []byte("x"), 0o644))
+	halfPacked := filepath.Join(compiled, filepath.Dir(packed[0]), fmt.Sprintf(".pack-%d-x.gz", deadPID))
+	require.NoError(t, os.WriteFile(halfPacked, []byte("half"), 0o644))
+	// A live sibling run's work dir must stay.
+	liveWork := filepath.Join(cacheRoot, "compiled", fmt.Sprintf(".run-%d-live", os.Getppid()))
+	require.NoError(t, os.MkdirAll(liveWork, 0o755))
+
+	second := runOnce()
+	require.Equal(t, strings.Replace(first, "; compiling the plugin first, this can take a minute", "", 1), second, "warm run: same output, no compile promised")
+	again, plain := entries()
+	require.Equal(t, packed, again)
+	require.Empty(t, plain)
+	require.NoDirExists(t, killedWork)
+	require.NoFileExists(t, halfPacked)
+	require.DirExists(t, liveWork)
+	require.NoError(t, os.RemoveAll(liveWork))
+	noRunDirs()
 }

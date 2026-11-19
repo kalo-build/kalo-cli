@@ -1,14 +1,20 @@
 package main
 
 import (
+	"bufio"
+	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/tetratelabs/wazero"
 )
@@ -67,25 +73,274 @@ func wasmCompileCacheDir(subdir string) string {
 	return filepath.Join(root, filepath.FromSlash(subdir))
 }
 
+// compileCache is the on-disk compilation cache of one run. Compiled code
+// rests gzip-compressed in dir (<wazero dir>/<key>.gz, about a sixth of the
+// raw size); wazero only reads plain files from one directory and can't be
+// handed another store, so each run unpacks the entries into its own work
+// directory under the cache root (not /tmp, which is RAM on many systems),
+// runs on that, packs the entries it added and deletes the work directory.
+// A nil *compileCache means no cache; every method then does nothing.
+type compileCache struct {
+	dir      string // persistent: <cache root>/compiled/...
+	work     string // this run's plain copy: <cache root>/compiled/.run-<pid>-*
+	wazero   wazero.CompilationCache
+	compiled []string // digests to mark once their code is packed
+}
+
+// compressedSuffix marks a packed compiled entry in the persistent dir.
+const compressedSuffix = ".gz"
+
 // withCompileCache adds the on-disk compilation cache to config. wazero keys
 // entries by the module bytes, its own version and the CPU, and spec run only
 // compiles bytes whose digest it has already checked. A cache that can't be
-// opened only costs time, so the run goes on without it. Call close after the
-// runtime is closed. The returned dir is "" when no cache is in use.
-func withCompileCache(ctx context.Context, config wazero.RuntimeConfig, subdir string) (wazero.RuntimeConfig, string, func()) {
+// opened only costs time, so the run goes on without it (nil result). Call
+// Close after the runtime is closed.
+func withCompileCache(ctx context.Context, config wazero.RuntimeConfig, subdir string) (wazero.RuntimeConfig, *compileCache) {
 	dir := wasmCompileCacheDir(subdir)
 	if dir == "" {
-		return config, "", func() {}
+		return config, nil
 	}
-	cache, err := wazero.NewCompilationCacheWithDir(dir)
+	root, err := kaloCacheRoot()
 	if err != nil {
-		return config, "", func() {}
+		return config, nil
+	}
+	_ = os.RemoveAll(filepath.Join(root, legacyCompileCacheSubdir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return config, nil
 	}
 	pruneOtherWazeroVersions(dir)
-	if root, err := kaloCacheRoot(); err == nil {
-		_ = os.RemoveAll(filepath.Join(root, legacyCompileCacheSubdir))
+	workParent := filepath.Join(root, "compiled")
+	removeStaleRunFiles(workParent, ".run-")
+	work, err := os.MkdirTemp(workParent, fmt.Sprintf(".run-%d-", os.Getpid()))
+	if err != nil {
+		return config, nil
 	}
-	return config.WithCompilationCache(cache), dir, func() { _ = cache.Close(ctx) }
+	if err := unpackCompiled(dir, work); err != nil {
+		_ = os.RemoveAll(work)
+		return config, nil
+	}
+	cache, err := wazero.NewCompilationCacheWithDir(work)
+	if err != nil {
+		_ = os.RemoveAll(work)
+		return config, nil
+	}
+	return config.WithCompilationCache(cache), &compileCache{dir: dir, work: work, wazero: cache}
+}
+
+// Dir is the persistent cache directory ("" without a cache).
+func (c *compileCache) Dir() string {
+	if c == nil {
+		return ""
+	}
+	return c.dir
+}
+
+// MarkCompiled notes that digest compiled and ran; the marker is written on
+// Close, after the code is packed, so a run killed earlier leaves no marker
+// that promises compiled code.
+func (c *compileCache) MarkCompiled(digest string) {
+	if c != nil {
+		c.compiled = append(c.compiled, digest)
+	}
+}
+
+// Clear drops every compiled entry, packed and unpacked, after wazero failed
+// on a damaged one.
+func (c *compileCache) Clear() {
+	if c != nil {
+		clearCompileCache(c.work)
+		clearCompileCache(c.dir)
+	}
+}
+
+// Close packs the entries this run added, writes the markers and deletes the
+// work directory. Errors only cost a compile on a later run.
+func (c *compileCache) Close(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	_ = c.wazero.Close(ctx)
+	if packNewCompiled(c.work, c.dir) == nil {
+		for _, digest := range c.compiled {
+			markCompiled(c.dir, digest)
+		}
+	}
+	_ = os.RemoveAll(c.work)
+}
+
+// isWazeroEntry reports a file wazero wrote: inside a "wazero-*" directory,
+// not one of our markers (kalo-compiled/) or temporary files.
+func isWazeroEntry(rel string) bool {
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	return len(parts) == 2 && strings.HasPrefix(parts[0], "wazero-") && !strings.HasPrefix(parts[1], ".")
+}
+
+// unpackCompiled writes the plain form of every packed entry in dir into work.
+// A plain entry in dir (left by a build before compression) is moved into work
+// and packed on Close. An entry that doesn't unpack is deleted; wazero then
+// compiles that plugin again.
+func unpackCompiled(dir, work string) error {
+	removeStaleRunFiles(dir, ".pack-")
+	return filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil || !isWazeroEntry(rel) {
+			return nil
+		}
+		target := filepath.Join(work, strings.TrimSuffix(rel, compressedSuffix))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if !strings.HasSuffix(rel, compressedSuffix) {
+			if os.Rename(path, target) != nil {
+				_ = os.Remove(path)
+			}
+			return nil
+		}
+		if err := gunzipFile(path, target); err != nil {
+			_ = os.Remove(target)
+			_ = os.Remove(path)
+			if isNoSpace(err) {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// packNewCompiled gzips the entries in work that dir doesn't hold yet. Each
+// lands under a temporary name first and is renamed into place, so a run killed
+// while packing leaves no half entry under the real name.
+func packNewCompiled(work, dir string) error {
+	var firstErr error
+	_ = filepath.WalkDir(work, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(work, path)
+		if err != nil || !isWazeroEntry(rel) {
+			return nil
+		}
+		target := filepath.Join(dir, rel+compressedSuffix)
+		if _, err := os.Stat(target); err == nil {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			firstErr = err
+			return nil
+		}
+		temp := filepath.Join(filepath.Dir(target), fmt.Sprintf(".pack-%d-%s", os.Getpid(), filepath.Base(target)))
+		if err := gzipFile(path, temp); err != nil {
+			_ = os.Remove(temp)
+			firstErr = err
+			return nil
+		}
+		if err := os.Rename(temp, target); err != nil {
+			_ = os.Remove(temp)
+			firstErr = err
+		}
+		return nil
+	})
+	return firstErr
+}
+
+func gzipFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	zw := gzip.NewWriter(out)
+	if _, err := io.Copy(zw, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+func gunzipFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	zr, err := gzip.NewReader(bufio.NewReaderSize(in, 1<<20))
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, zr); err != nil {
+		out.Close()
+		return err
+	}
+	if err := zr.Close(); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+func isNoSpace(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "no space left")
+}
+
+// removeStaleRunFiles deletes entries in dir named "<prefix><pid>-..." whose
+// process is gone (a run that was killed), or older than a day.
+func removeStaleRunFiles(dir, prefix string) {
+	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, prefix) {
+			return nil
+		}
+		pidText, _, _ := strings.Cut(strings.TrimPrefix(name, prefix), "-")
+		pid, convErr := strconv.Atoi(pidText)
+		stale := convErr != nil || !processAlive(pid)
+		if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > 24*time.Hour {
+			stale = true
+		}
+		if stale {
+			_ = os.RemoveAll(path)
+		}
+		if entry.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+}
+
+// processAlive reports whether a process with this id runs (our own pid counts).
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	if pid == os.Getpid() {
+		return true
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true // FindProcess opened it
+	}
+	err = process.Signal(syscall.Signal(0))
+	return err == nil || !errors.Is(err, os.ErrProcessDone)
 }
 
 // pruneRecipeVersions keeps one version of a fetched recipe: it deletes the
@@ -130,6 +385,9 @@ func recipeVersionBytes(root, name string) map[string]int64 {
 func treeBytes(root string) int64 {
 	var total int64
 	_ = filepath.WalkDir(root, func(_ string, entry os.DirEntry, err error) error {
+		if err == nil && entry.IsDir() && strings.HasPrefix(entry.Name(), ".run-") {
+			return filepath.SkipDir // another run's unpacked copy
+		}
 		if err == nil && entry.Type().IsRegular() {
 			if info, err := entry.Info(); err == nil {
 				total += info.Size()
