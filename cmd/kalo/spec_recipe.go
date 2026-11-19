@@ -421,18 +421,26 @@ func requireEmptyOrMissing(dir, flag string, force bool) error {
 // --receipts and --keep-specs keep anything else.
 func runRecipe(options recipeRunOptions) (*recipeRunResult, error) {
 	// Bytes in the cache before the run: the cache line prints only when the
-	// run added some (a fetch or a compile).
+	// run added some (a fetch or a compile). A fetched recipe is measured per
+	// version, so the bytes the prune frees from an older version cannot hide
+	// the bytes this version adds.
 	cacheRoot, cacheErr := kaloCacheRoot()
 	var cacheBefore int64
+	var versionBefore map[string]int64
 	if cacheErr == nil {
 		cacheBefore = treeBytes(filepath.Join(cacheRoot, "recipes")) + treeBytes(filepath.Join(cacheRoot, "compiled"))
+		if options.LocalCatalog == "" {
+			versionBefore = recipeVersionBytes(cacheRoot, options.Name)
+		}
 	}
 	recipeRoot, err := resolveRecipe(options)
 	if err != nil {
 		return nil, err
 	}
+	cachedVersion := ""
 	if options.LocalCatalog == "" && cacheErr == nil {
 		version := filepath.Base(recipeRoot)
+		cachedVersion = version
 		pruneRecipeVersions(cacheRoot, options.Name, version)
 		options.Run.CompileCacheSubdir = recipeCompileCacheSubdir(options.Name, version)
 	}
@@ -557,7 +565,11 @@ func runRecipe(options recipeRunOptions) (*recipeRunResult, error) {
 		}
 	}
 	if cacheErr == nil && options.Run.Progress != nil {
-		if treeBytes(filepath.Join(cacheRoot, "recipes"))+treeBytes(filepath.Join(cacheRoot, "compiled")) > cacheBefore {
+		added := treeBytes(filepath.Join(cacheRoot, "recipes"))+treeBytes(filepath.Join(cacheRoot, "compiled")) > cacheBefore
+		if versionBefore != nil {
+			added = recipeVersionBytes(cacheRoot, options.Name)[cachedVersion] > versionBefore[cachedVersion]
+		}
+		if added {
 			printCacheLine(options.Run.Progress, cacheRoot)
 		}
 	}

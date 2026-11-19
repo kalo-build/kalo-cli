@@ -44,3 +44,21 @@
   - `kalo`
 - Tests run:
   - `go test ./... ; e2e /tmp/e77/kalo clean HOME recipe 0.1.3 Petstore cold 19.5 s + warm 1.0 s, golden-identical, stale dirs pruned`
+
+### Checkpoint
+- Created At: 2026-11-19T08:28:01Z
+- Stage: validated
+- Decision: promote
+- Source: `checkpoints/20261119-082801-validated.md`
+- Structured Evidence: `checkpoints/20261119-082801-validated.json`
+- What changed: -
+- Evidence for decision: 4 file(s) edited; 1 test command(s)
+- What remains: -
+- Next iteration: promote to the next slice
+- Files edited:
+  - `README.md`
+  - `cmd/kalo/spec_compile_cache.go`
+  - `cmd/kalo/spec_compile_cache_test.go`
+  - `cmd/kalo/spec_recipe.go`
+- Tests run:
+  - `go test ./... (all ok); TestRecipeRunKeepsOneVersion fails on 2c449d4 code, passes with fix`

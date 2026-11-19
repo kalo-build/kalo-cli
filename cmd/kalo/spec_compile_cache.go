@@ -108,6 +108,24 @@ func pruneRecipeVersions(root, name, keep string) {
 	}
 }
 
+// recipeVersionBytes returns, per version of a fetched recipe, the bytes of its
+// plugins (recipes/<name>/<v>) plus its compiled code (compiled/recipe/<name>/<v>).
+func recipeVersionBytes(root, name string) map[string]int64 {
+	sizes := map[string]int64{}
+	for _, parent := range []string{filepath.Join(root, "recipes", name), filepath.Join(root, "compiled", "recipe", name)} {
+		entries, err := os.ReadDir(parent)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+				sizes[entry.Name()] += treeBytes(filepath.Join(parent, entry.Name()))
+			}
+		}
+	}
+	return sizes
+}
+
 // treeBytes sums the sizes of the regular files under root (0 if missing).
 func treeBytes(root string) int64 {
 	var total int64

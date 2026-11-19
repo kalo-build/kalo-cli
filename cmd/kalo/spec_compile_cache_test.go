@@ -207,6 +207,24 @@ func TestRecipeRunKeepsOneVersionDropsOldCacheAndPrintsCacheLineOnce(t *testing.
 	_, err = runRecipe(again)
 	require.NoError(t, err)
 	require.NotContains(t, warm.String(), "kalo: cached")
+
+	// A bump where the pruned version holds more bytes than this run adds
+	// (eng1's repro on #21): the line still prints.
+	bigStale := filepath.Join(cacheRoot, "recipes", "fixture", "0.0.9")
+	require.NoError(t, os.MkdirAll(bigStale, 0o755))
+	sparse, err := os.Create(filepath.Join(bigStale, "big"))
+	require.NoError(t, err)
+	require.NoError(t, sparse.Truncate(300<<20))
+	require.NoError(t, sparse.Close())
+	require.NoError(t, os.RemoveAll(compiled))
+	var bump bytes.Buffer
+	third := recipeRunOptions{Name: "fixture", Version: "0.1.0", Input: userInput(t, root), Out: filepath.Join(t.TempDir(), "sdk")}
+	third.Run.Progress = &bump
+	_, err = runRecipe(third)
+	require.NoError(t, err)
+	require.NoDirExists(t, bigStale)
+	require.Greater(t, countFiles(t, compiled), 0)
+	require.Contains(t, bump.String(), "kalo: cached", "freed bytes from a pruned version must not hide added bytes")
 }
 
 func TestFormatMB(t *testing.T) {

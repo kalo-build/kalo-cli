@@ -172,8 +172,9 @@ unsafe or open-world effects unless explicitly authorized.
   use `compiled/route`.
 
 Only one version of each recipe is kept: a run of another version deletes the
-other versions' `recipes/` and `compiled/` directories. A run that adds bytes
-to the cache prints one line with the sizes read from disk. When kalo is
+other versions' `recipes/` and `compiled/` directories. A run that fetches
+or compiles the recipe version it runs prints one line with the sizes read
+from disk, also when the versions it deleted were larger. When kalo is
 upgraded to a build with a different wazero version, the old version's
 compiled code for the same platform is deleted the next time the cache opens;
 the `wazero/` directory left by v0.2.0-agent.4 and older is deleted too.
