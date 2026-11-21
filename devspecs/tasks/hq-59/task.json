@@ -1,0 +1,340 @@
+{
+  "task_id": "hq-59",
+  "series": "D",
+  "profile": "code-change",
+  "query": "Prepare, don't merge: kalo-cli README (reach §2c) and page links in the kalo-plugins READMEs, as held PRs for \"A: merged\"",
+  "status": "packed",
+  "created_at": "2026-11-17T15:42:02Z",
+  "updated_at": "2026-11-17T15:42:26Z",
+  "repo_root": "/tmp/kcli59",
+  "workspace": "/tmp/kcli59/devspecs/tasks/hq-59",
+  "artifacts": {
+    "series": "D",
+    "index": "D00-index.md",
+    "first_slice": "D01-prepare-don-t-merge-kalo-cli-readme-reach-2c-and-page-links-in-plan.md",
+    "result": "D01-prepare-don-t-merge-kalo-cli-readme-reach-2c-and-page-links-in-result.md",
+    "slices": [
+      {
+        "id": "D01",
+        "title": "Prepare, don't merge: kalo-cli README (reach §2c) and page links in the kalo-plugins READMEs, as held PRs for \"A: merged\"",
+        "plan": "D01-prepare-don-t-merge-kalo-cli-readme-reach-2c-and-page-links-in-plan.md",
+        "result": "D01-prepare-don-t-merge-kalo-cli-readme-reach-2c-and-page-links-in-result.md",
+        "kind": "slice",
+        "stage": "validated",
+        "decision": "promote",
+        "updated_at": "2026-11-17T15:42:26Z",
+        "latest_checkpoint_id": "cp_20261117T154226Z_d01_validated",
+        "latest_checkpoint": "checkpoints/20261117-154226-validated.md",
+        "latest_checkpoint_json": "checkpoints/20261117-154226-validated.json"
+      }
+    ]
+  },
+  "predicted_context": {
+    "relevant_areas": [
+      "cmd/kalo",
+      "scripts",
+      "pkg/registry",
+      "internal/specv0",
+      "pkg/config"
+    ],
+    "primary_files": [
+      {
+        "path": "cmd/kalo/spec_recipe.go",
+        "title": "cmd/kalo/spec_recipe.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: kalo",
+          "query term match in body: cli",
+          "identifier/body match: kalo-cli"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main.go",
+        "title": "cmd/kalo/main.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: kalo",
+          "query term match in body: cli",
+          "query term match in body: don",
+          "authority prior: stale or superseded"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec.go",
+        "title": "cmd/kalo/spec.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: kalo",
+          "query term match in body: cli",
+          "query term match in body: don"
+        ]
+      },
+      {
+        "path": "pkg/registry/kalo_registry_client.go",
+        "title": "pkg/registry/kalo_registry_client.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "query term match in path: cli",
+          "query term match in path: kalo",
+          "query term match in body: plugins"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_stage.go",
+        "title": "cmd/kalo/spec_stage.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: filesystem_source_family_recovery",
+          "query term match in path: kalo",
+          "query term match in body: cli",
+          "scout source preservation: query roots kalo; primary test roots spec",
+          "bounded body evidence: cli=1, kalo=3; bytes=2181"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_compile_cache.go",
+        "title": "cmd/kalo/spec_compile_cache.go (go)",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: filesystem_source_family_recovery",
+          "query term match in path: kalo",
+          "scout source preservation: query roots kalo; primary test roots spec",
+          "bounded body evidence: kalo=7; bytes=5006"
+        ]
+      },
+      {
+        "path": "scripts/build-all-plugins.sh",
+        "title": "scripts/build-all-plugins.sh",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: plugins",
+          "query term match in body: kalo"
+        ]
+      },
+      {
+        "path": "scripts/upload-plugins-to-gcs.sh",
+        "title": "scripts/upload-plugins-to-gcs.sh",
+        "kind": "source_context",
+        "role": "implementation_surface",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: plugins",
+          "query term match in body: cli"
+        ]
+      }
+    ],
+    "tests": [
+      {
+        "path": "cmd/kalo/spec_recipe_test.go",
+        "title": "cmd/kalo/spec_recipe_test.go (go)",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "query term match in path: kalo",
+          "query term match in body: cli",
+          "identifier/body match: kalo-plugins"
+        ]
+      },
+      {
+        "path": "cmd/kalo/main_test.go#L14",
+        "title": "TestCLI_RootHelp",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_loss_safe_preserved",
+          "query term match in path: kalo",
+          "query term match in title: cli"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_stage_test.go",
+        "title": "cmd/kalo/spec_stage_test.go",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_test_reservation",
+          "pack tier: related (reserved manifest test with direct query evidence)",
+          "query term match in path: kalo"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_compile_cache_test.go",
+        "title": "cmd/kalo/spec_compile_cache_test.go",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_test_reservation",
+          "pack tier: related (reserved manifest test with direct query evidence)",
+          "query term match in path: kalo"
+        ]
+      },
+      {
+        "path": "pkg/config/config_test.go#L11",
+        "title": "TestStepSpecUnmarshalYAML_StringForm",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_relationship_recovery",
+          "authority prior: classifier confidence"
+        ]
+      },
+      {
+        "path": "cmd/kalo/spec_memory_test.go",
+        "title": "cmd/kalo/spec_memory_test.go (go)",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_relationship_recovery",
+          "query term match in path: kalo",
+          "query term match in body: don"
+        ]
+      },
+      {
+        "path": "scripts/test-install.sh",
+        "title": "scripts/test-install.sh",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_relationship_recovery",
+          "query term match in body: don",
+          "query term match in body: kalo"
+        ]
+      },
+      {
+        "path": "internal/specv0/conformance_test.go#L47",
+        "title": "TestConformanceAddressVectors",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: source_manifest_relationship_recovery"
+        ]
+      },
+      {
+        "path": "pkg/registry/registry_test.go#L14",
+        "title": "TestPluginLockInfo_PluginIdentity",
+        "kind": "source_context",
+        "subtype": "test_case",
+        "role": "behavior_tests",
+        "evidence": [
+          "relationship expansion: same_directory_test_companion",
+          "pack tier: related (same_directory_test_companion)",
+          "query term match in body: kalo"
+        ]
+      }
+    ],
+    "noise_risks": [
+      {
+        "path": "cmd/kalo/testdata/specrun/plugin/main.go",
+        "title": "cmd/kalo/testdata/specrun/plugin/main.go (go)",
+        "kind": "source_context",
+        "role": "excluded_noise",
+        "evidence": [
+          "relationship expansion: source_manifest_family_recovery",
+          "query term match in path: kalo",
+          "query term match in body: cli",
+          "authority prior: stale or superseded"
+        ]
+      }
+    ],
+    "related_git_receipts": [
+      {
+        "sha": "b1ea89198e6337d0bb694313252448aa98819ccc",
+        "short_sha": "b1ea891",
+        "committed_at": "2026-11-14",
+        "subject": "spec run: harden recipe runs before the first preview tag",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/spec.go",
+          "cmd/kalo/spec_recipe.go"
+        ],
+        "matched_terms": [
+          "readme",
+          "reach",
+          "page",
+          "in",
+          "a"
+        ],
+        "signals": [
+          "touched 3 packed path(s)",
+          "matched query anchors",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "b6323f0642c922b74a06932874c8f0950fc0a351",
+        "short_sha": "b6323f0",
+        "committed_at": "2026-07-23",
+        "subject": "feat(config): add plugin compatibility diagnostics",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "pkg/registry/kalo_registry_client.go",
+          "scripts/build-all-plugins.sh"
+        ],
+        "matched_terms": [
+          "t",
+          "in",
+          "a"
+        ],
+        "signals": [
+          "touched 4 packed path(s)",
+          "matched query anchors",
+          "cross-file change"
+        ]
+      },
+      {
+        "sha": "aaf859cb6fa6e7c5ba53740f50f31c32be2ce57d",
+        "short_sha": "aaf859c",
+        "committed_at": "2026-11-14",
+        "subject": "spec run: reserve plugin memory, default cap from free memory, one-line OOM",
+        "matched_paths": [
+          "cmd/kalo/main.go",
+          "cmd/kalo/spec.go",
+          "cmd/kalo/spec_stage.go"
+        ],
+        "matched_terms": [
+          "t",
+          "in",
+          "a"
+        ],
+        "signals": [
+          "touched 3 packed path(s)",
+          "matched query anchors",
+          "PR/issue reference",
+          "cross-file change"
+        ]
+      }
+    ]
+  },
+  "confidence": {
+    "primary_file_confidence": "high",
+    "test_coverage_confidence": "high",
+    "docs_config_confidence": "low",
+    "git_receipt_confidence": "high",
+    "noise_risk": "medium",
+    "pack_completeness": "medium",
+    "why": [
+      "found 8 likely primary file(s)",
+      "found 9 likely test file(s)",
+      "found 3 related Git receipt(s)",
+      "1 file(s) were downgraded as likely noise"
+    ],
+    "agent_instruction": "Validate the test and integration surface before editing. Record critical misses and distracting inclusions in the slice result or a task checkpoint."
+  },
+  "durability": {}
+}
