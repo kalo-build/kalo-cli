@@ -165,11 +165,17 @@ unsafe or open-world effects unless explicitly authorized.
 `<user cache dir>/kalo` when that is unset (`~/.cache/kalo` on Linux,
 `~/Library/Caches/kalo` on macOS):
 
-- `recipes/<name>/<version>`: the fetched recipe (about 42 MB for openapi-sdk).
+- `recipes/<name>/<version>`: the fetched recipe.
 - `compiled/recipe/<name>/<version>`: the compiled machine code of the
-  recipe's plugins (about 153 MB for openapi-sdk on linux/amd64), so only the
-  first run pays for compiling. Route runs and recipes run from a local folder
-  use `compiled/route`.
+  recipe's plugins, so only the first run pays for compiling. Route runs and
+  recipes run from a local folder use `compiled/route`.
+
+For example, a first run of recipe openapi-sdk 0.2.0 with v0.2.0-agent.5 on
+linux/amd64 (25 Nov 2026) printed
+`kalo: cached 36 MB in ~/.cache/kalo (plugins 22 MB, compiled code 14 MB)`:
+22 MB fetched recipe plus 14 MB compiled code, 36 MB in total. Other recipe
+versions and platforms give other sizes; the line your own run prints is the
+figure for your machine.
 
 Only one version of each recipe is kept: a run of another version deletes the
 other versions' `recipes/` and `compiled/` directories. A run that fetches
