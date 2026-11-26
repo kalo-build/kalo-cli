@@ -159,6 +159,38 @@ host supports local filesystem I/O and WASI Preview 1 only. It rejects required
 state, unknown required extensions, unsupported representation mechanisms, and
 unsafe or open-world effects unless explicitly authorized.
 
+#### Cache
+
+`kalo spec run` keeps two things on disk under `$KALO_CACHE_DIR`, or
+`<user cache dir>/kalo` when that is unset (`~/.cache/kalo` on Linux,
+`~/Library/Caches/kalo` on macOS):
+
+- `recipes/<name>/<version>`: the fetched recipe.
+- `compiled/recipe/<name>/<version>`: the compiled machine code of the
+  recipe's plugins, so only the first run pays for compiling. Route runs and
+  recipes run from a local folder use `compiled/route`.
+
+For example, a first run of recipe openapi-sdk 0.2.0 with v0.2.0-agent.5 on
+linux/amd64 (25 Nov 2026) printed
+`kalo: cached 36 MB in ~/.cache/kalo (plugins 22 MB, compiled code 14 MB)`:
+22 MB fetched recipe plus 14 MB compiled code, 36 MB in total. Other recipe
+versions and platforms give other sizes; the line your own run prints is the
+figure for your machine.
+
+Only one version of each recipe is kept: a run of another version deletes the
+other versions' `recipes/` and `compiled/` directories. A run that fetches
+or compiles the recipe version it runs prints one line with the sizes read
+from disk, also when the versions it deleted were larger. When kalo is
+upgraded to a build with a different wazero version, the old version's
+compiled code for the same platform is deleted the next time the cache opens;
+the `wazero/` directory left by v0.2.0-agent.4 and older is deleted too.
+
+- Turn compiled code off: `KALO_NO_COMPILE_CACHE=1` (every run compiles).
+- Clear it: `rm -rf ~/.cache/kalo` (or the path above).
+- Trust: kalo checks each plugin's digest before compiling it, but machine
+  code loaded from this cache is not checked again. Treat the directory like
+  the `kalo` binary itself: anyone who can write to it can change what runs.
+
 ## Configuration
 
 Kalo CLI uses a YAML configuration file (`kalo.yaml` by default) to define stores, plugins, and pipelines.

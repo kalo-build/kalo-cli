@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,6 +92,13 @@ type specRunOptions struct {
 	// QuietPluginOutput keeps plugin stdout/stderr off our stderr (recipe runs
 	// without --verbose); the tail is still kept for error messages.
 	QuietPluginOutput bool
+	// Progress, when set, gets one line per step before it starts, so a
+	// cold run that spends most of a minute compiling is not silent.
+	Progress io.Writer
+	// CompileCacheSubdir is the compile cache directory relative to the cache
+	// root; "" means the shared route directory. Recipe runs use one per
+	// recipe version so pruning a version drops its compiled code.
+	CompileCacheSubdir string
 }
 
 func specRunCommand() *cobra.Command {
@@ -126,6 +134,7 @@ Or execute one SPEC route from a local catalog and keep values and Receipts:
 				}
 				recipe.Input, recipe.Run = options.Input, options
 				recipe.Run.QuietPluginOutput = !verbose
+				recipe.Run.Progress = cmd.ErrOrStderr()
 				if verbose {
 					recipe.Log = cmd.ErrOrStderr()
 				}
@@ -302,6 +311,8 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 	if memoryLimit.MiB > 0 {
 		runtimeConfig = runtimeConfig.WithMemoryLimitPages(memoryLimit.MiB * 16)
 	}
+	runtimeConfig, compileCache := withCompileCache(ctx, runtimeConfig, options.CompileCacheSubdir)
+	defer compileCache.Close(ctx) // deferred first, so it runs after wasmRuntime.Close
 	wasmRuntime := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer wasmRuntime.Close(ctx)
 	wasi_snapshot_preview1.MustInstantiate(ctx, wasmRuntime)
@@ -373,6 +384,17 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		if err != nil {
 			return nil, err
 		}
+		if options.Progress != nil {
+			stepOf := ""
+			if len(route.Steps) > 1 {
+				stepOf = fmt.Sprintf(" (step %d/%d)", index+1, len(route.Steps))
+			}
+			wait := "; compiling the plugin first, this can take a minute"
+			if compiledBefore(compileCache.Dir(), step.Implementation.Artifact.Digest) {
+				wait = ""
+			}
+			fmt.Fprintf(options.Progress, "kalo: running %s%s%s\n", step.ProcessorAddress, stepOf, wait)
+		}
 		stageStarted := time.Now().UTC()
 		pluginCtx := ctx
 		cancel := func() {}
@@ -392,6 +414,15 @@ func runSPEC(options specRunOptions) (*specExecutionResult, error) {
 		}
 		stagePolicy.PluginOutput = pluginLog
 		err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
+		if compileCache != nil && isCompileCacheError(err) {
+			// The compile failed before the plugin ran: drop the damaged entries
+			// and compile from scratch once instead of failing the run.
+			compileCache.Clear()
+			err = executePlugin(pluginCtx, wasmRuntime, kaloHost, cache, implementationPath, step.Implementation.Artifact.Digest, stores, plugin, stagePolicy)
+		}
+		if err == nil {
+			compileCache.MarkCompiled(step.Implementation.Artifact.Digest)
+		}
 		if warnings != nil {
 			warnings.Flush()
 		}
